@@ -5,12 +5,12 @@ services:
       - "127.0.0.1:55432:5432"
     environment:
       POSTGRES_DB: bayanflow
-      POSTGRES_USER: bayanflow
+      POSTGRES_USER: bayanflow_owner
       POSTGRES_PASSWORD: bayanflow
     volumes:
       - bayanflow-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bayanflow -d bayanflow"]
+      test: ["CMD-SHELL", "pg_isready -U bayanflow_owner -d bayanflow"]
       interval: 3s
       timeout: 3s
       retries: 15

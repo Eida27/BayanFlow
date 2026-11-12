@@ -1,6 +1,6 @@
 import pg from 'pg'
 
-export const databaseUrl = env => env.DATABASE_URL || 'postgres://bayanflow:bayanflow@127.0.0.1:55432/bayanflow'
+export const databaseUrl = env => env.DATABASE_URL || 'postgres://bayanflow_owner:bayanflow@127.0.0.1:55432/bayanflow'
 export const createPool = (env = process.env) => new pg.Pool({ connectionString: databaseUrl(env) })
 
 export async function transaction(pool, work) {
