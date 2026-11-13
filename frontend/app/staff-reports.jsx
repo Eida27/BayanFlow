@@ -104,16 +104,16 @@ export default function StaffReports() {
           <div className="status-total"><dt>Median time to first decision</dt><dd>{processingTime(report.medianSeconds)}</dd></div>
         </dl>
       </section>
-      <section className="panel stack" aria-labelledby="testnet-activity">
+      <SubmissionTrend trend={report.trend} bucket={report.bucket} />
+      <section className="panel">
+        <ReportTable caption="Submissions by service" label="Municipal service" rows={report.services.map(({ label, count, resubmitted }) => [label, count, resubmitted])} />
+      </section>
+      <section className="panel stack staff-testnet" aria-labelledby="testnet-activity">
         <h2 id="testnet-activity">BSC Testnet activity</h2>
         <dl className="report-totals">
           <div className="status-total"><dt>Confirmed testnet payments</dt><dd>{report.confirmedPayments}</dd></div>
           <div className="status-total"><dt>Confirmed amount · Testnet BNB</dt><dd>{report.totalBnb}</dd></div>
         </dl>
-      </section>
-      <SubmissionTrend trend={report.trend} bucket={report.bucket} />
-      <section className="panel">
-        <ReportTable caption="Submissions by service" label="Municipal service" rows={report.services.map(({ label, count, resubmitted }) => [label, count, resubmitted])} />
       </section>
     </>}
   </div>

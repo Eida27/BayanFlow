@@ -62,7 +62,7 @@ export default function StaffDashboard() {
   useVisibleRefresh(refresh)
 
   return <>
-    <section className="panel dashboard-panel" aria-labelledby="activity-title">
+    <section className="panel dashboard-panel staff-activity" aria-labelledby="activity-title">
       <div className="section-title">
         <h2 id="activity-title">Today’s Activity</h2>
         <button className="button secondary" disabled={busy} onClick={refresh}>Refresh</button>
@@ -80,7 +80,7 @@ export default function StaffDashboard() {
     {summary && <section className="panel dashboard-panel stack" aria-labelledby="workload-title">
       <div className="section-title">
         <h2 id="workload-title">Pending Workload</h2>
-        <a href="/staff/applications">View application queue</a>
+        <a className="button secondary" href="/staff/applications">View application queue</a>
       </div>
       <div className="priority-groups">
         <PriorityGroup filter="manual-review" title="Needs manual document review" group={summary.manualReview} emptyMessage="No applications need manual document review." />

@@ -9,6 +9,9 @@ import { applicationFilters } from '../../application-filters.js'
 import StaffReports from './staff-reports'
 import { StaffNotifications, StaffSettings } from './staff-notifications'
 import { useVisibleRefresh } from './use-visible-refresh'
+import StaffShell, { StaffIcon } from './staff-shell'
+import ResidentApplication from './resident-application'
+import { reportRange, reportTimezone } from '../../report-dates.js'
 import { BUSINESS_PERMIT, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../../services.js'
 
 const statuses = {
@@ -29,24 +32,23 @@ const payAbi = [{
 const paymentKey = id => `bayanflow-payment-${id}`
 const testnet = createPublicClient({ chain: bscTestnet, transport: http() })
 
-function SignIn({ signIn, busy }) {
+function SignIn({ signIn, busy, error }) {
   const [role, setRole] = useState('resident')
-  return <div className="login-grid">
+  const [visible, setVisible] = useState(false)
+  return <div className="login-grid resident-login">
     <section className="intro">
       <span className="kicker"><i /> MUNICIPAL SERVICES</span>
       <h1>Municipal services<br />in one place<span>.</span></h1>
       <p>Apply for municipal permits and clearances, track staff review, and verify your testnet payment.</p>
-      <ol className="journey">
-        <li><b>01</b><span>Submit</span></li>
-        <li><b>02</b><span>Review</span></li>
-        <li><b>03</b><span>Pay &amp; verify</span></li>
-      </ol>
     </section>
     <section className="panel login-panel">
       <h2>Sign in to BayanFlow</h2>
       <p>Choose a demo account to try the application workflow.</p>
       <div className="role-toggle" aria-label="Demo account">
-        {['resident', 'staff'].map(value => <button type="button" key={value} aria-pressed={role === value} onClick={() => setRole(value)}>{value === 'resident' ? 'Resident' : 'Municipal staff'}</button>)}
+        {['resident', 'staff'].map(value => <button type="button" key={value} disabled={busy} aria-pressed={role === value} onClick={() => {
+          setVisible(false)
+          setRole(value)
+        }}>{value === 'resident' ? 'Resident' : 'Municipal staff'}</button>)}
       </div>
       <form key={role} className="stack" onSubmit={event => {
         event.preventDefault()
@@ -54,49 +56,23 @@ function SignIn({ signIn, busy }) {
         signIn({ email: data.get('email'), password: data.get('password') })
       }}>
         <label>Email address<input name="email" type="email" required autoComplete="username" defaultValue={`${role}@bayanflow.test`} /></label>
-        <label>Password<input name="password" type="password" required autoComplete="current-password" defaultValue={`${role}-demo`} /></label>
-        <button className="button primary" disabled={busy}>Sign in <span aria-hidden="true">→</span></button>
+        <div>
+          <label htmlFor="demo-password">Password</label>
+          <div className="resident-password">
+            <input id="demo-password" name="password" type={visible ? 'text' : 'password'} required autoComplete="current-password" defaultValue={`${role}-demo`} />
+            <button type="button" className="button secondary" aria-controls="demo-password"
+              onClick={() => setVisible(!visible)}>{visible ? 'Hide password' : 'Show password'}</button>
+          </div>
+        </div>
+        {error && <p className="error" role="alert">{error}</p>}
+        <button className="button primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'} <span aria-hidden="true">→</span></button>
       </form>
       <p className="notice">Use only the fictional sample documents. Payments use test BNB.</p>
     </section>
   </div>
 }
 
-function ApplicationForm({ application, service = application?.service ?? BUSINESS_PERMIT, submit, busy }) {
-  const clearance = service !== BUSINESS_PERMIT
-  const zoning = service === ZONING_CLEARANCE
-  const tricycle = service === TRICYCLE_PERMIT
-  const { documents } = services[service]
-  return <form className="stack" onSubmit={event => {
-    event.preventDefault()
-    const data = new FormData(event.currentTarget)
-    if (zoning) {
-      for (const [name] of documents) if (!data.get(name)?.name) data.delete(name)
-    }
-    submit(data)
-  }}>
-    <input type="hidden" name="service" value={service} />
-    <label>{tricycle ? 'Operator name' : zoning ? 'Applicant or project name' : clearance ? 'Full name' : 'Business name'}<input name="title" required maxLength={120} defaultValue={application?.title ?? ''} /></label>
-    {clearance && <>
-      {tricycle
-        ? <label>Fictional plate or unit ID<input name="vehicle_identifier" required maxLength={40} defaultValue={application?.vehicle_identifier ?? ''} /></label>
-        : <label>{zoning ? 'Site address' : 'Address'}<textarea name="address" rows="2" required maxLength={240} defaultValue={application?.address ?? ''} /></label>}
-      <label>{tricycle ? 'Proposed route or zone' : zoning ? 'Proposed use' : 'Purpose of request'}<textarea name="purpose" rows="3" required maxLength={500} defaultValue={application?.purpose ?? ''} /></label>
-    </>}
-    {zoning && <p>{application ? 'Reattach every PDF you want included in this revision.' : 'You can submit with missing PDFs. Staff needs all three before approval.'}</p>}
-    {documents.map(([name, label, sample, alternate, alternateLabel = 'Download incomplete sample']) => <div className="upload" key={name}>
-      <label>{label}<input name={name} type="file" accept=".pdf,application/pdf" required={!zoning} /></label>
-      <div className="document-links">
-        <a href={'/samples/' + sample} download>Download sample</a>
-        {alternate && <a href={'/samples/' + alternate} download>{alternateLabel}</a>}
-      </div>
-    </div>)}
-    {!clearance && <a href="/samples/incomplete-premises-declaration.pdf" download>Download incomplete premises sample</a>}
-    <button className="button primary" disabled={busy}>{application ? 'Resubmit application' : 'Submit application'}</button>
-  </form>
-}
-
-function Details({ application, staff, run, decide, busy, setPending, pending }) {
+function Details({ application, staff, run, decide, busy, setPending, pending, submitApplication }) {
   const base = '/applications/' + application.id
   const clearance = (application.service ?? BUSINESS_PERMIT) !== BUSINESS_PERMIT
   const zoning = application.service === ZONING_CLEARANCE
@@ -105,7 +81,11 @@ function Details({ application, staff, run, decide, busy, setPending, pending })
   const uploaded = new Set(application.uploaded_documents)
   const missingZoningDocs = zoning && documents.some(([name]) => !uploaded.has(name))
   const [paymentError, setPaymentError] = useState('')
-  const paymentWarning = paymentError || (!application.payer && 'Authorize a wallet before confirming payment.')
+  const [decisionError, setDecisionError] = useState('')
+  const [correcting, setCorrecting] = useState(false)
+  const correctionStart = useRef(null)
+  const paymentWarning = !application.payer && !pending && 'Authorize a wallet before confirming payment.'
+  const staffNote = application.decision_note && <div className="notice"><strong>Staff note</strong><p>{application.decision_note}</p></div>
 
   function runPayment(action) {
     setPaymentError('')
@@ -155,12 +135,14 @@ function Details({ application, staff, run, decide, busy, setPending, pending })
     })
   }
 
-  return <div className="details stack">
+  const documentsAndFindings = <>
+    {clearance && <h4>Applicant details</h4>}
     {clearance && <div className="applicant-details">
       <p>{tricycle ? <><strong>Plate or unit ID</strong> {application.vehicle_identifier}</> : <><strong>{zoning ? 'Site address' : 'Address'}</strong> {application.address}</>}</p>
       <p><strong>{tricycle ? 'Proposed route or zone' : zoning ? 'Proposed use' : 'Purpose'}</strong> {application.purpose}</p>
     </div>}
-    <div className="document-links">{documents.map(([name, label]) => zoning && !uploaded.has(name)
+    <h4>Submitted documents</h4>
+    <div className="document-links">{documents.map(([name, label]) => (staff || zoning) && !uploaded.has(name)
       ? <span key={name}>{label} · No PDF attached</span>
       : <a key={name} href={`/api${base}/documents/${name}?revision=${application.revision}`} target="_blank" rel="noreferrer">{label} ↗</a>)}</div>
     {(application.findings?.length > 0 || application.ai_error) && <section className="findings">
@@ -174,32 +156,53 @@ function Details({ application, staff, run, decide, busy, setPending, pending })
         {finding.excerpt && <blockquote>{finding.excerpt}</blockquote>}
       </div>)}
     </section>}
-    {application.decision_note && <div className="notice"><strong>Staff note</strong><p>{application.decision_note}</p></div>}
-    {staff && application.status === 'submitted' && <form className="stack" onSubmit={event => {
+    {staff && staffNote}
+  </>
+
+  return <div className={staff ? 'details staff-review' : 'details stack'}>
+    {!staff && staffNote}
+    {!staff && application.status === 'needs_correction' && <>
+      {!correcting && <div><button className="button primary" ref={correctionStart} disabled={busy}
+        onClick={() => setCorrecting(true)}>Start corrections</button></div>}
+      {correcting && <ResidentApplication key={application.revision} application={application} busy={busy}
+        submit={(data, reportError) => submitApplication(data, reportError, application.id, () => setCorrecting(false))}
+        onCancel={() => {
+          setCorrecting(false)
+          requestAnimationFrame(() => correctionStart.current?.focus())
+        }} />}
+    </>}
+    {staff ? <div className="staff-evidence stack">{documentsAndFindings}</div> : documentsAndFindings}
+    {staff && application.status === 'submitted' && <form className="staff-decision stack" onSubmit={event => {
       event.preventDefault()
       const data = new FormData(event.currentTarget)
-      decide(application.id, () => api(base + '/decision', { status: data.get('status'), note: data.get('note'), revision: application.revision }))
+      setDecisionError('')
+      decide(application.id, () => api(base + '/decision', {
+        status: data.get('status'), note: data.get('note'), revision: application.revision,
+      }), setDecisionError)
     }}>
+      <h4>Staff decision</h4>
       {missingZoningDocs && <p className="notice">All three zoning PDFs must be attached before approval.</p>}
       <label>Decision<select name="status" defaultValue="" required><option value="" disabled>Choose a decision</option><option value="approved" disabled={missingZoningDocs}>Approve for payment</option><option value="needs_correction">Request corrections</option><option value="rejected">Reject</option></select></label>
       <label>Decision note<textarea name="note" rows="3" required maxLength={1000} /></label>
-      <button className="button primary" disabled={busy}>Save decision</button>
+      {decisionError && <p className="error" role="alert">{decisionError}</p>}
+      <button className="button primary" disabled={busy}>{busy ? 'Working…' : 'Save decision'}</button>
     </form>}
-    {!staff && application.status === 'needs_correction' && <ApplicationForm key={application.revision} application={application} busy={busy} submit={data => run(() => api(base + '/revision', data))} />}
-    {!staff && application.status === 'approved' && <section className="stack">
+    {!staff && application.status === 'approved' && <section className="stack resident-payment">
       <h4>Testnet payment</h4>
       <p>Use an Ethereum-compatible wallet on BNB Smart Chain Testnet. Your wallet displays the test BNB amount before you approve the transaction.</p>
       {application.payer && <p className="wallet-address">Payment wallet <code>{application.payer}</code></p>}
       {pending && <p>Verify the saved transaction first. If your wallet shows it was dropped or cancelled, you can retry payment.</p>}
       <div className="document-links">
-        <button className={pending ? 'button secondary' : 'button primary'} onClick={pay} disabled={busy}>{pending ? 'Retry payment' : 'Pay with wallet'}</button>
-        <button className="button secondary" disabled={busy} onClick={() => runPayment(() => verifyPayment(pending))}>Verify payment</button>
+        {!pending && <button className="button primary" onClick={pay} disabled={busy}>Pay with wallet</button>}
+        <button className={pending ? 'button primary' : 'button secondary'} disabled={busy} onClick={() => runPayment(() => verifyPayment(pending))}>Verify payment</button>
+        {pending && <button className="button secondary" onClick={pay} disabled={busy}>Retry payment</button>}
         {paymentWarning && <span className="payment-warning" role="status">
           <span className="payment-warning-icon" aria-hidden="true">!</span>
           {paymentWarning}
         </span>}
         {pending && <a href={explorer + pending} target="_blank" rel="noreferrer">View transaction ↗</a>}
       </div>
+      {paymentError && <p className="error" role="alert">{paymentError}</p>}
       {pending && <button className="button secondary" disabled={busy} onClick={() => runPayment(() => verifyPayment())}>Search for a matching payment</button>}
     </section>}
     {application.status === 'paid' && <div className="document-links">
@@ -213,21 +216,55 @@ function Details({ application, staff, run, decide, busy, setPending, pending })
 function ApplicationCard({ application, staff, ...props }) {
   const [pending, setPending] = useState('')
   useEffect(() => {
+    if (staff) return
     const hash = localStorage.getItem(paymentKey(application.id))
     setPending(hash ?? '')
-  }, [application.id])
-  return <details className="application" id={staff ? applicationAnchor(application.id) : undefined}>
-    <summary><div><h3>{application.title}</h3><small>{services[application.service ?? BUSINESS_PERMIT].label}{application.created_at && ` · ${new Date(application.created_at).toLocaleDateString('en-PH', { dateStyle: 'medium' })}`}</small></div><span className={`status ${application.status}`}>{statuses[application.status]}</span></summary>
+  }, [application.id, staff])
+  const nextStep = {
+    submitted: 'Wait for staff review',
+    needs_correction: 'Review staff feedback and resubmit',
+    approved: pending ? 'Verify your saved transaction' : 'Pay the demo fee with your wallet',
+    rejected: 'Read the staff decision',
+    paid: 'Open your payment receipt',
+  }
+  return <details className="application" id={applicationAnchor(application.id)}>
+    <summary><div><h3>{application.title}</h3><small>{services[application.service ?? BUSINESS_PERMIT].label}{application.created_at && ` · ${new Date(application.created_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeZone: reportTimezone })}`}</small>
+      {!staff && <span className="resident-next-step">{nextStep[application.status]}</span>}</div><span className={`status ${application.status}`}>{statuses[application.status]}</span></summary>
     <Details application={application} staff={staff} pending={pending} setPending={setPending} {...props} />
   </details>
 }
 
-const staffSections = {
-  dashboard: { href: '/', label: 'Dashboard', description: 'Analytics and daily overview' },
-  applications: { href: '/staff/applications', label: 'Applications', description: 'Review and manage requests' },
-  reports: { href: '/staff/reports', label: 'Reports', description: 'Detailed analytics and exports' },
-  notifications: { href: '/staff/notifications', label: 'Notifications', description: 'Alerts and recent events' },
-  settings: { href: '/staff/settings', label: 'Settings', description: 'Staff preferences' },
+function matchesQueueSearch(application, query) {
+  const term = query.trim().toLocaleLowerCase('en-PH')
+  const service = services[application.service ?? BUSINESS_PERMIT].label
+  return [application.title, service].some(value => value.toLocaleLowerCase('en-PH').includes(term))
+}
+
+function QueueToolbar({ search, setSearch, queueFilter, busy }) {
+  const [filter, setFilter] = useState(queueFilter?.filter ?? '')
+  const dated = filter === 'new-today' || filter === 'resubmissions'
+  return <div className="staff-queue-tools">
+    <label className="staff-search">Search applications
+      <span><StaffIcon name="search" />
+        <input id="staff-queue-search" type="search" value={search} placeholder="Application title or service" readOnly={busy}
+          onChange={event => setSearch(event.target.value)} />
+      </span>
+    </label>
+    <form action="/staff/applications" className="staff-queue-filters">
+      {search.trim() && <input type="hidden" name="q" value={search.trim()} />}
+      <label>Queue filter
+        <select name={filter ? 'filter' : undefined} value={filter} disabled={busy} onChange={event => setFilter(event.target.value)}>
+          <option value="">All applications</option>
+          {Object.entries(applicationFilters).map(([value, label]) =>
+            <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      {dated && <label>Activity date (Manila)
+        <input type="date" name="date" required defaultValue={queueFilter?.date ?? reportRange({}).to} />
+      </label>}
+      <button className="button secondary" disabled={busy}>Apply filter</button>
+    </form>
+  </div>
 }
 
 export default function Portal({ section = 'dashboard' }) {
@@ -237,10 +274,15 @@ export default function Portal({ section = 'dashboard' }) {
   const [error, setError] = useState('')
   const [applications, setApplications] = useState(null)
   const [queueFilter, setQueueFilter] = useState(null)
+  const [search, setSearch] = useState('')
+  const [decisionNotice, setDecisionNotice] = useState('')
   const nextFocus = useRef(null)
   const queueHeading = useRef(null)
   const [showForm, setShowForm] = useState(false)
-  const [service, setService] = useState(BUSINESS_PERMIT)
+  const [residentNotice, setResidentNotice] = useState('')
+  const startButton = useRef(null)
+  const residentHeading = useRef(null)
+  const residentFocus = useRef(null)
   const [unreadCount, updateUnreadCount] = useState(null)
   const badgeVersion = useRef(0)
   const staff = user?.role === 'staff'
@@ -259,7 +301,6 @@ export default function Portal({ section = 'dashboard' }) {
   }, [])
   useVisibleRefresh(staff && section !== 'notifications' ? refreshUnread : null)
   const staffQueueReady = staff && section === 'applications' && !loading && applications !== null
-  const sectionInfo = staffSections[section]
 
   async function enterPortal(account) {
     if (account?.role === 'staff' && section === 'dashboard' && /^#application-[0-9a-f-]+$/i.test(window.location.hash)) {
@@ -271,11 +312,15 @@ export default function Portal({ section = 'dashboard' }) {
       return
     }
     setUser(account)
+    if (account?.role === 'staff' && section === 'applications') {
+      setSearch(new URLSearchParams(window.location.search).get('q') ?? '')
+    }
     if (account && (account.role === 'resident' || section === 'applications')) await refresh(account.role === 'staff')
   }
 
   async function loadApplications(forStaff) {
     const params = new URLSearchParams(forStaff ? window.location.search : '')
+    params.delete('q')
     const filter = params.get('filter')
     const date = params.get('date')
     const filtered = params.has('filter') || params.has('date')
@@ -306,6 +351,14 @@ export default function Portal({ section = 'dashboard' }) {
     else queueHeading.current?.focus()
   }, [applications, busy])
 
+  useEffect(() => {
+    if (busy || !residentFocus.current) return
+    if (applications?.some(application => application.id === residentFocus.current)) {
+      openApplicationCard(applicationAnchor(residentFocus.current))
+      residentFocus.current = null
+    } else residentHeading.current?.focus()
+  }, [applications, busy])
+
   async function run(action, refreshAfter = true, reportError = setError) {
     setBusy(true)
     setError('')
@@ -319,85 +372,158 @@ export default function Portal({ section = 'dashboard' }) {
     }
   }
 
-  function decide(id, action) {
+  function submitApplication(data, reportError, applicationId, afterSave = () => setShowForm(false)) {
+    setResidentNotice('')
+    run(async () => {
+      const { id } = await api(applicationId ? '/applications/' + applicationId + '/revision' : '/applications', data)
+      residentFocus.current = id
+      afterSave()
+      setResidentNotice(applicationId ? 'Application resubmitted for review.' : 'Application submitted for review.')
+      try {
+        await refresh(false)
+      } catch {
+        setApplications(null)
+        setError('Your application was saved. Refresh to see its latest status.')
+      }
+    }, false, reportError)
+  }
+
+  function decide(id, action, reportError) {
+    setDecisionNotice('')
     run(async () => {
       await action()
-      const updated = await loadApplications(true)
-      if (queueFilter && !updated.some(item => item.id === id)) {
-        const reviewedIndex = applications.findIndex(item => item.id === id)
-        const remaining = new Set(updated.map(item => item.id))
-        nextFocus.current = applications.slice(reviewedIndex + 1).find(item => remaining.has(item.id))?.id
-          ?? updated[0]?.id ?? ''
+      setDecisionNotice('Decision saved.')
+      let updated
+      try {
+        updated = await loadApplications(true)
+      } catch {
+        setApplications(null)
+        nextFocus.current = ''
+        setError('The decision was saved. Refresh to reload the application queue.')
+        return
+      }
+      const visible = updated.filter(item => matchesQueueSearch(item, search))
+      if (!visible.some(item => item.id === id)) {
+        const reviewedIndex = visibleApplications.findIndex(item => item.id === id)
+        const remaining = new Set(visible.map(item => item.id))
+        nextFocus.current = visibleApplications.slice(reviewedIndex + 1).find(item => remaining.has(item.id))?.id
+          ?? visible[0]?.id ?? ''
         if (window.location.hash === '#' + applicationAnchor(id)) {
           window.history.replaceState(null, '', window.location.pathname + window.location.search)
         }
-      }
+      } else nextFocus.current = id
       setApplications(updated)
-    }, false)
+    }, false, reportError)
   }
 
+  const visibleApplications = staff ? applications?.filter(item => matchesQueueSearch(item, search)) : applications
   const filterLabel = queueFilter && (Object.hasOwn(applicationFilters, queueFilter.filter)
     ? applicationFilters[queueFilter.filter] : 'Application filter')
   const eventCount = queueFilter?.filter === 'resubmissions'
     ? applications?.reduce((sum, item) => sum + item.event_count, 0) : null
 
-  return <>
-    <Header user={user} busy={busy} signOut={() => run(async () => {
+  function updateSearch(value) {
+    setSearch(value)
+    const url = new URL(window.location.href)
+    if (value.trim()) {
+      url.searchParams.set('q', value.trim())
+      url.hash = ''
+    } else url.searchParams.delete('q')
+    window.history.replaceState(null, '', url)
+  }
+
+  function signOut() {
+    run(async () => {
       await api('/logout', {})
       setUser(null)
       setUnreadCount(null)
       setApplications(null)
       setShowForm(false)
-      setService(BUSINESS_PERMIT)
+      setResidentNotice('')
+      residentFocus.current = null
+      setSearch('')
+      setDecisionNotice('')
       if (section !== 'dashboard') window.location.replace('/')
-    }, false)} />
-    <main className="shell main">
-      {error && <p className="error" role="alert">{error}</p>}
-      {busy && <p className="progress" role="status">Working on your request…</p>}
-      {loading ? <p role="status">Loading BayanFlow…</p> : !user ? <SignIn busy={busy} signIn={credentials => run(async () => {
+    }, false)
+  }
+
+  const feedback = <>
+    {error && <p className="error" role="alert">{error}</p>}
+    {busy && <p className="progress" role="status">Working on your request…</p>}
+  </>
+
+  if (staff) return <StaffShell section={section} unreadCount={unreadCount} busy={busy} signOut={signOut}>
+    {feedback}
+    {section === 'dashboard' && <StaffDashboard />}
+    {section === 'reports' && <StaffReports />}
+    {section === 'notifications' && <StaffNotifications setUnreadCount={setUnreadCount} />}
+    {section === 'settings' && <StaffSettings setUnreadCount={setUnreadCount} />}
+    {section === 'applications' && <section className="panel staff-queue">
+      <div className="section-title">
+        <h2 ref={queueHeading} tabIndex={-1}>Application queue</h2>
+        <button className="button secondary" disabled={busy || loading} onClick={() => run(refresh, false)}>Refresh</button>
+      </div>
+      {!loading && <QueueToolbar key={queueFilter?.filter ?? 'all'} queueFilter={queueFilter}
+        search={search} setSearch={updateSearch} busy={busy} />}
+      <div className="queue-filter">
+        <p role="status">
+          {filterLabel && <strong>{filterLabel} · </strong>}
+          {queueFilter?.date && <>{queueFilter.date} Manila time · </>}
+          {visibleApplications && <>{visibleApplications.length} {visibleApplications.length === 1 ? 'application' : 'applications'}
+            {search.trim() && <> of {applications.length}</>}
+            {!search.trim() && eventCount > applications.length && <> from {eventCount} resubmission events</>}
+          </>}
+        </p>
+        <div className="staff-clear-actions">
+          {search && <button className="button secondary" disabled={busy} onClick={() => {
+            updateSearch('')
+            document.getElementById('staff-queue-search')?.focus()
+          }}>Clear search</button>}
+          {queueFilter && <a href={'/staff/applications' + (search.trim() ? '?' + new URLSearchParams({ q: search.trim() }) : '')}>Clear filter</a>}
+        </div>
+      </div>
+      {decisionNotice && <p className="notice" role="status">{decisionNotice}</p>}
+      {!visibleApplications ? <p role="status">{busy || loading ? 'Loading applications…' : 'Applications are unavailable.'}</p>
+        : visibleApplications.length ? visibleApplications.map(application => <ApplicationCard key={application.id}
+          application={application} staff run={run} decide={decide} busy={busy} />)
+        : <div className="empty"><h3>{search.trim() || queueFilter ? 'No matching applications' : 'No applications yet'}</h3>
+          <p>{search.trim() ? 'Try another title or service name.' : queueFilter ? 'Choose another filter to see more applications.' : 'Submitted applications will appear here.'}</p>
+        </div>}
+    </section>}
+  </StaffShell>
+
+  return <div className="resident-site">
+    <a className="resident-skip" href="#resident-main">Skip to main content</a>
+    <Header user={user} busy={busy} signOut={signOut} />
+    <main className="shell main" id="resident-main" tabIndex={-1}>
+      {loading ? <p role="status">Loading BayanFlow…</p> : !user ? <SignIn busy={busy} error={error} signIn={credentials => run(async () => {
         await api('/login', credentials)
         await enterPortal((await api('/me')).user)
       }, false)} /> : <>
-        {staff && <nav className="staff-nav" aria-label="Staff portal">
-          {Object.entries(staffSections).map(([id, { href, label }]) =>
-            <a key={id} href={href} aria-current={section === id ? 'page' : undefined}>{label}
-              {id === 'notifications' && unreadCount > 0 && <span className="staff-unread-count" aria-label={`${unreadCount} unread`}>{unreadCount}</span>}
-            </a>
-          )}
-        </nav>}
-        <section className="workspace-hero">
-          <div><span className="kicker"><i /> {staff ? 'MUNICIPAL STAFF PORTAL' : 'RESIDENT PORTAL'}</span>
-          <h1>{staff ? section === 'dashboard' ? 'Analytics Dashboard' : sectionInfo.label : 'Municipal services'}<span>.</span></h1>
-          <p>{staff ? sectionInfo.description : 'Submit documents and follow your applications through review and payment.'}</p></div>
-          {!staff && <button className="button primary" aria-expanded={showForm} onClick={() => setShowForm(!showForm)} disabled={busy}>{showForm ? 'Close form' : '+ New application'}</button>}
+        <section className="resident-hero">
+          <div><span className="kicker">Resident Portal</span>
+          <h1>Municipal services</h1>
+          <p>Submit documents and follow your applications through review and payment.</p></div>
+          {!showForm && <button className="button primary" ref={startButton} onClick={() => setShowForm(true)} disabled={busy}>Start an application</button>}
         </section>
-        {staff && section === 'dashboard' && <StaffDashboard />}
-        {staff && section === 'reports' && <StaffReports />}
-        {staff && section === 'notifications' && <StaffNotifications setUnreadCount={setUnreadCount} />}
-        {staff && section === 'settings' && <StaffSettings setUnreadCount={setUnreadCount} />}
-        {showForm && !staff && <section className="panel form-panel stack">
+        {showForm && <section className="resident-new stack">
           <h2>New application</h2>
-          <label>Municipal service<select value={service} disabled={busy} onChange={event => setService(event.target.value)}>
-            {Object.entries(services).map(([id, { label }]) => <option key={id} value={id}>{label}</option>)}
-          </select></label>
-          <ApplicationForm key={service} service={service} busy={busy} submit={data => run(async () => {
-            await api('/applications', data)
+          <ResidentApplication busy={busy} submit={submitApplication} onCancel={() => {
             setShowForm(false)
-          })} />
+            requestAnimationFrame(() => startButton.current?.focus())
+          }} />
         </section>}
-        {(!staff || section === 'applications') && <section className="panel list-panel">
-          <div className="section-title"><h2 ref={queueHeading} tabIndex={-1}>{filterLabel || (staff ? 'Application queue' : 'Your applications')}</h2><button className="button secondary" disabled={busy} onClick={() => run(refresh, false)}>Refresh</button></div>
-          {queueFilter && <div className="queue-filter">
-            <p role="status">{queueFilter.date && <>{queueFilter.date} · Manila time · </>}{applications !== null && <>
-              {applications.length} matching {applications.length === 1 ? 'application' : 'applications'}
-              {eventCount > applications.length && <> from {eventCount} resubmission events. Each application is listed once.</>}
-            </>}</p>
-            <a href="/staff/applications">Clear filter</a>
-          </div>}
-          {applications === null ? <p>{busy ? 'Loading applications…' : 'Applications are unavailable.'}</p> : applications.length ? applications.map(application => <ApplicationCard key={application.id} application={application} staff={staff} run={run} decide={decide} busy={busy} />) : <div className="empty"><h3>{queueFilter ? 'No applications match this filter' : 'No applications yet'}</h3>{!queueFilter && <p>{staff ? 'Submitted applications will appear here.' : 'Choose a municipal service to start an application.'}</p>}</div>}
-        </section>}
+        <section className="panel list-panel">
+          <div className="section-title"><h2 ref={residentHeading} tabIndex={-1}>Your applications</h2><button className="button secondary" disabled={busy} onClick={() => run(refresh, false)}>{busy ? 'Working…' : applications === null || error ? 'Retry' : 'Refresh'}</button></div>
+          {residentNotice && <p className="notice" role="status">{residentNotice}</p>}
+          {error && <p className="error" role="alert">{error}</p>}
+          {applications === null ? <p role="status">{busy ? 'Loading applications…' : 'Applications are unavailable.'}</p> : applications.length ? applications.map(application => <ApplicationCard key={application.id}
+            application={application} run={run} busy={busy} submitApplication={submitApplication} />)
+            : <div className="empty"><StaffIcon name="applications" /><h3>No applications yet</h3><p>Your submitted applications will appear here.</p>
+              {!showForm && <button className="button secondary" disabled={busy} onClick={() => setShowForm(true)}>Choose a service</button>}</div>}
+        </section>
       </>}
     </main>
     <Footer />
-  </>
+  </div>
 }

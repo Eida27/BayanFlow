@@ -1,4 +1,6 @@
 import './globals.css'
+import './staff.css'
+import './resident.css'
 
 export const metadata = {
   title: 'BayanFlow | Business Permit Demo',

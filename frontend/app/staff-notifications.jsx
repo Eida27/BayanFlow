@@ -75,7 +75,7 @@ export function StaffNotifications({ setUnreadCount }) {
   }
 
   const through = feed?.items[0]?.id
-  return <section className="panel stack" aria-label="Notification feed">
+  return <section className="panel stack staff-alerts" aria-label="Notification feed">
     <div className="section-title">
       <h2>Recent alerts</h2>
       <button className="button secondary" disabled={busy || !through || !feed.unreadCount}
@@ -154,7 +154,7 @@ export function StaffSettings({ setUnreadCount }) {
     }
   }
 
-  return <section className="panel stack" aria-labelledby="notification-settings">
+  return <section className="panel stack staff-settings" aria-labelledby="notification-settings">
     <h2 id="notification-settings">Notification preferences</h2>
     <p>Choose which alerts appear in your Staff Portal.</p>
     {error && <p className="error" role="alert">{error}</p>}

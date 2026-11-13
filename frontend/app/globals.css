@@ -67,11 +67,6 @@ input[type=file] { background: var(--back); }
 .upload { display: grid; gap: 4px; }
 .upload a, form > a { width: fit-content; font-size: .85rem; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-.staff-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
-.staff-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 12px; border-radius: 8px; text-decoration: none; color: var(--ink); }
-.staff-nav a:hover { background: var(--paper); }
-.staff-nav a[aria-current=page] { color: white; background: var(--dark-green); }
-.staff-unread-count { margin-left: 8px; min-width: 1.5rem; border-radius: 99px; background: #e7f5ef; color: var(--dark-green); padding: 1px 6px; text-align: center; font-size: .8rem; }
 .notification-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
 .notification-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
 .notification-list .notification-unread { background: var(--back); border-inline-start: 4px solid var(--green); }
