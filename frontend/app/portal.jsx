@@ -6,7 +6,8 @@ import { bscTestnet } from 'viem/chains'
 import { api, Header, Footer, explorer } from './shared'
 import StaffDashboard, { applicationAnchor, openLinkedApplication } from './staff-dashboard'
 import StaffReports from './staff-reports'
-import { StaffNotifications, StaffSettings, useNotificationRefresh } from './staff-notifications'
+import { StaffNotifications, StaffSettings } from './staff-notifications'
+import { useVisibleRefresh } from './use-visible-refresh'
 import { BUSINESS_PERMIT, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../../services.js'
 
 const statuses = {
@@ -252,7 +253,7 @@ export default function Portal({ section = 'dashboard' }) {
       // The feed shows request errors and offers a retry.
     }
   }, [])
-  useNotificationRefresh(staff && section !== 'notifications' ? refreshUnread : null)
+  useVisibleRefresh(staff && section !== 'notifications' ? refreshUnread : null)
   const staffQueueReady = staff && section === 'applications' && !loading && applications !== null
   const sectionInfo = staffSections[section]
 
@@ -266,7 +267,7 @@ export default function Portal({ section = 'dashboard' }) {
       return
     }
     setUser(account)
-    if (account && (account.role === 'resident' || section === 'dashboard' || section === 'applications')) await refresh()
+    if (account && (account.role === 'resident' || section === 'applications')) await refresh()
   }
 
   async function refresh() {
@@ -327,7 +328,7 @@ export default function Portal({ section = 'dashboard' }) {
           <p>{staff ? sectionInfo.description : 'Submit documents and follow your applications through review and payment.'}</p></div>
           {!staff && <button className="button primary" aria-expanded={showForm} onClick={() => setShowForm(!showForm)} disabled={busy}>{showForm ? 'Close form' : '+ New application'}</button>}
         </section>
-        {staff && section === 'dashboard' && <StaffDashboard applications={applications} loading={busy} busy={busy} refresh={() => run(refresh, false)} />}
+        {staff && section === 'dashboard' && <StaffDashboard />}
         {staff && section === 'reports' && <StaffReports />}
         {staff && section === 'notifications' && <StaffNotifications setUnreadCount={setUnreadCount} />}
         {staff && section === 'settings' && <StaffSettings setUnreadCount={setUnreadCount} />}

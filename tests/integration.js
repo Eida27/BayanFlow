@@ -94,6 +94,20 @@ test('municipal applications from submission through retried receipt confirmatio
   }
 
   const [resident, staff, other] = await Promise.all(['resident', 'staff', 'other'].map(login))
+  assert.equal((await request('/staff/dashboard')).status, 401)
+  assert.equal((await request('/staff/dashboard', { cookie: resident })).status, 403)
+  const dashboard = await request('/staff/dashboard', { cookie: staff })
+  assert.equal(dashboard.status, 200)
+  const baseline = await dashboard.json()
+  await db.query(`
+    UPDATE applications SET created_at =
+      ((statement_timestamp() AT TIME ZONE 'Asia/Manila')::date::timestamp AT TIME ZONE 'Asia/Manila') - interval '1 second'
+    WHERE id = $1
+  `, [legacyClearanceId])
+  const backlog = await (await request('/staff/dashboard', { cookie: staff })).json()
+  assert.equal(backlog.activity.submitted, baseline.activity.submitted - 1)
+  assert.equal(backlog.counts.submitted, baseline.counts.submitted)
+  assert.ok(backlog.manualReview.items.some(item => item.id === legacyClearanceId))
   assert.equal((await request('/staff/notifications')).status, 401)
   assert.equal((await request('/staff/notifications', { cookie: resident })).status, 403)
   assert.deepEqual(await (await request('/staff/notifications', { cookie: staff })).json(),
@@ -276,9 +290,14 @@ test('municipal applications from submission through retried receipt confirmatio
   const tricyclePath = applicationsPath + '/' + tricycleId
   assert.equal((await review(tricyclePath, 'needs_correction', 1)).status, 200)
   const fixed = tricycleForm('DEMO-TRI-042', true, vehiclePdf)
+  const beforeRevision = await (await request('/staff/dashboard', { cookie: staff })).json()
   reviewSucceeds = true
   assert.equal((await request(tricyclePath + '/revision', { cookie: resident, body: fixed })).status, 200)
   reviewSucceeds = false
+  const afterRevision = await (await request('/staff/dashboard', { cookie: staff })).json()
+  assert.equal(afterRevision.activity.resubmitted, beforeRevision.activity.resubmitted + 1)
+  assert.ok(afterRevision.awaitingApproval.items.some(item => item.id === tricycleId))
+  assert.equal(afterRevision.manualReview.items.length, Math.min(5, afterRevision.manualReview.count))
   const oldVehicle = await request(tricyclePath + '/documents/tricycle_vehicle?revision=1', { cookie: staff })
   assert.equal(oldVehicle.status, 200)
   assert.match(await oldVehicle.text(), /DEMO-TRI-099/)
@@ -388,6 +407,11 @@ test('municipal applications from submission through retried receipt confirmatio
         [ids[index], 'fixture-' + index, wei, tx, date])
     }
     const query = '?from=2021-01-01&to=2021-01-01'
+    await db.query(`
+      INSERT INTO staff_notifications (application_id, kind, revision, title, service, manual_review, created_at)
+      VALUES ($1, 'resubmission', 2, 'Private fixture name', 'business_permit', false, '2020-12-31T16:00:00Z'),
+             ($1, 'resubmission', 3, 'Private fixture name', 'business_permit', false, '2021-01-01T16:00:00Z')
+    `, [ids[0]])
     const reports = '/staff/reports'
     for (const path of [reports, reports + '/pdf']) {
       assert.equal((await request(path + query)).status, 401)
@@ -398,8 +422,10 @@ test('municipal applications from submission through retried receipt confirmatio
     assert.equal(response.status, 200, await response.clone().text())
     const report = await response.json()
     assert.equal(report.submitted, 2)
-    assert.deepEqual(report.trend, [{ period: '2021-01-01', count: 2 }])
+    assert.equal(report.resubmitted, 1)
+    assert.deepEqual(report.trend, [{ period: '2021-01-01', count: 2, resubmitted: 1 }])
     assert.deepEqual(report.services.map(({ count }) => count), [1, 0, 1, 0])
+    assert.deepEqual(report.services.map(({ resubmitted }) => resubmitted), [1, 0, 0, 0])
     assert.equal(report.firstDecisions, 2)
     assert.equal(report.medianSeconds, 1800)
     assert.equal(report.confirmedPayments, 2)
@@ -409,15 +435,17 @@ test('municipal applications from submission through retried receipt confirmatio
     assert.equal(pdf.status, 200)
     assert.match(pdf.headers.get('content-disposition'), /bayanflow-report-2021-01-01-2021-01-01\.pdf/)
     const pdfText = await extractText(Buffer.from(await pdf.arrayBuffer()))
-    for (const expected of ['2021-01-01', 'Applications submitted: 2', 'Median time to first decision: 30 min',
-      'Confirmed payments: 2', '30.000000000000000003 BSC Testnet BNB']) assert.ok(pdfText.includes(expected), expected)
+    for (const expected of ['2021-01-01', 'New applications: 2', 'Resubmissions: 1', 'Business Permit: 1 new, 1 resubmitted',
+      'Median time to first decision: 30 min', 'Confirmed testnet payments: 2', '30.000000000000000003 BSC Testnet BNB']) {
+      assert.ok(pdfText.includes(expected), expected)
+    }
     assert.doesNotMatch(pdfText, /Private fixture name|Private note/)
 
     const empty = await (await request(reports + '?from=2018-01-01&to=2018-04-01', { cookie: staff })).json()
     assert.equal(empty.bucket, 'month')
     assert.equal(empty.medianSeconds, null)
     assert.equal(empty.totalBnb, '0')
-    assert.deepEqual(empty.trend, ['2018-01', '2018-02', '2018-03', '2018-04'].map(period => ({ period, count: 0 })))
+    assert.deepEqual(empty.trend, ['2018-01', '2018-02', '2018-03', '2018-04'].map(period => ({ period, count: 0, resubmitted: 0 })))
 
     const longPdf = await request(reports + '/pdf?from=2018-01-01&to=2018-03-31', { cookie: staff })
     assert.equal(longPdf.status, 200)

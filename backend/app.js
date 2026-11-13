@@ -10,6 +10,7 @@ import { BUSINESS_PERMIT, MAYORS_CLEARANCE, TRICYCLE_PERMIT, ZONING_CLEARANCE, s
 import { amount } from './payment.js'
 import { decisionAllowed } from './workflow.js'
 import { needsManualReview } from '../review-findings.js'
+import { loadStaffDashboard } from './staff-dashboard.js'
 import { recordStaffNotification, registerStaffNotifications } from './staff-notifications.js'
 import { reportRange } from '../report-dates.js'
 import { loadReport, reportPdf } from './reports.js'
@@ -138,6 +139,10 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
     return loadReport(pool, range)
   }
 
+  api.get('/staff/dashboard', async (req, res) => {
+    role(req, 'staff')
+    res.json(await loadStaffDashboard(pool))
+  })
   api.get('/staff/reports', async (req, res) => res.json(await staffReport(req)))
   api.get('/staff/reports/pdf', async (req, res) => {
     const report = await staffReport(req)

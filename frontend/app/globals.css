@@ -93,6 +93,11 @@ input[type=file] { background: var(--back); }
 .report-totals dd { font-size: 1.35rem; overflow-wrap: anywhere; }
 .trend-chart { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; }
 .trend-chart svg { display: block; width: 100%; height: 180px; border-bottom: 1px solid var(--line); fill: var(--dark-green); }
+.trend-chart .resubmissions { fill: #3857a0; }
+.report-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; list-style: none; padding: 0; margin: 0; }
+.report-legend li::before { content: ''; display: inline-block; width: .75em; height: .75em; margin-right: 6px; background: var(--dark-green); }
+.report-legend .resubmissions::before { background: #3857a0; }
+.dashboard-date { margin-bottom: 10px; }
 .trend-scale { display: flex; flex-direction: column; justify-content: space-between; }
 .trend-dates { grid-column: 2; display: flex; justify-content: space-between; }
 .trend-scale, .trend-dates { color: var(--muted); font-size: .85rem; }
@@ -100,7 +105,8 @@ input[type=file] { background: var(--back); }
 .report-table { width: 100%; border-collapse: collapse; text-align: left; }
 .report-table caption { text-align: left; font-size: 1.25rem; font-weight: 750; margin-block: 8px; }
 .report-table th, .report-table td { padding: 8px 6px; border-bottom: 1px solid var(--line); }
-.report-table th:last-child, .report-table td { text-align: right; }
+.report-table thead th:not(:first-child), .report-table td { text-align: right; }
+.report-table th { overflow-wrap: anywhere; }
 .report-table tbody th { font-weight: 500; }
 .dashboard-panel { margin-bottom: 20px; }
 .status-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; }
