@@ -129,8 +129,11 @@ export default function ResidentApplication({ application, busy, submit, onCance
         {application && <p>{zoning ? 'Reattach every PDF you want included in this revision.' : 'Reattach a PDF for every requirement. Previous uploads are stored with the earlier revision.'}</p>}
         {zoning && <p>You can submit with missing PDFs. Staff needs all three before approval.</p>}
         {documents.map(([name, label, sample, alternate, alternateLabel]) => <div className="resident-upload" key={name}>
-          <label htmlFor={prefix + name}>{label}{zoning && <small>Optional for submission</small>}</label>
-          <input {...fieldProps(name)} type="file" accept=".pdf,application/pdf" required={!zoning} disabled={busy}
+          <div className="resident-upload-label">{label}{zoning && <small>Optional for submission</small>}</div>
+          <button {...fieldProps(name)} type="button" className="button secondary" disabled={busy}
+            aria-label={`Choose file for ${label}`}
+            onClick={() => document.getElementById(prefix + name + '-file').click()}>Choose file</button>
+          <input hidden id={prefix + name + '-file'} type="file" accept=".pdf,application/pdf" disabled={busy}
             onChange={event => {
               const file = event.target.files[0]
               if (file) setFiles({ ...files, [name]: file })

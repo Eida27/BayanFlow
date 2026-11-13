@@ -20,14 +20,25 @@ export function openLinkedApplication() {
   openApplicationCard(window.location.hash.slice(1))
 }
 
-function CountLink({ filter, date, count, label }) {
-  return <Link href={'/staff/applications' + applicationFilterQuery(filter, date)}
-    aria-label={`${count} ${label}`}>{count}</Link>
+function MetricCard({ filter, date, count, label }) {
+  return <Link className="status-total dashboard-link dashboard-metric"
+    href={'/staff/applications' + applicationFilterQuery(filter, date)}
+    aria-label={`${count} ${label}`}>
+    <span className="metric-label">{label}</span>
+    <span className="metric-value">{count}</span>
+    <span className="dashboard-arrow" aria-hidden="true">→</span>
+  </Link>
 }
 
 function PriorityGroup({ filter, title, group: { count, items }, emptyMessage }) {
   return <section className="priority-group">
-    <h3>{title} <span className="priority-count"><CountLink filter={filter} count={count} label={title} /></span></h3>
+    <h3><Link className="dashboard-link priority-heading"
+      href={'/staff/applications' + applicationFilterQuery(filter)}
+      aria-label={`${title}, ${count} applications`}>
+      <span>{title}</span>
+      <span className="priority-count">{count}</span>
+      <span aria-hidden="true">→</span>
+    </Link></h3>
     {items.length ? <ul className="priority-list">
       {items.map(application =>
         <li key={application.id}>
@@ -72,10 +83,10 @@ export default function StaffDashboard() {
       {!summary && busy && <p role="status">Loading dashboard…</p>}
       {summary && <>
         <p className="dashboard-date"><time dateTime={summary.date}>{summary.date}</time> · Manila time</p>
-        <dl className="status-totals">
-          <div className="status-total"><dt>New applications</dt><dd><CountLink filter="new-today" date={summary.date} count={summary.activity.submitted} label="New applications" /></dd></div>
-          <div className="status-total"><dt>Resubmissions</dt><dd><CountLink filter="resubmissions" date={summary.date} count={summary.activity.resubmitted} label="Resubmissions" /></dd></div>
-        </dl>
+        <div className="status-totals">
+          <MetricCard filter="new-today" date={summary.date} count={summary.activity.submitted} label="New applications" />
+          <MetricCard filter="resubmissions" date={summary.date} count={summary.activity.resubmitted} label="Resubmissions" />
+        </div>
       </>}
     </section>
     {summary && <section className="panel dashboard-panel stack" aria-labelledby="workload-title">
@@ -88,11 +99,10 @@ export default function StaffDashboard() {
         <PriorityGroup filter="awaiting-approval" title="Awaiting approval" group={summary.awaitingApproval} emptyMessage="No applications are awaiting approval." />
       </div>
       <h3>Current application statuses</h3>
-      <dl className="status-totals">
-        {Object.entries(applicationStatuses).map(([status, label]) => <div className="status-total" key={status}>
-          <dt>{label}</dt><dd><CountLink filter={status} count={summary.counts[status]} label={label} /></dd>
-        </div>)}
-      </dl>
+      <div className="status-totals">
+        {Object.entries(applicationStatuses).map(([status, label]) =>
+          <MetricCard key={status} filter={status} count={summary.counts[status]} label={label} />)}
+      </div>
     </section>}
   </>
 }

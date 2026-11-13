@@ -77,10 +77,9 @@
 .resident-service:has(:focus-visible) { outline: 3px solid var(--green); outline-offset: 2px; }
 .resident-service input { margin: 0; padding: 0; width: 18px; height: 18px; flex: none; accent-color: var(--dark-green); }
 .resident-service svg { color: var(--dark-green); flex: none; }
-.resident-service small, .resident-upload label small { display: block; color: var(--muted); font-weight: 500; }
+.resident-service small, .resident-upload-label small { display: block; color: var(--muted); font-weight: 500; }
 .resident-upload { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--back); }
-.resident-upload input { background: white; }
-.resident-upload input::file-selector-button { cursor: pointer; }
+.resident-upload-label { margin-bottom: 6px; font-size: .9rem; font-weight: 650; }
 .resident-upload .document-links a, .resident-site .details .document-links a { display: inline-flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; }
 .resident-file, .resident-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .resident-file { margin-top: 8px; }
