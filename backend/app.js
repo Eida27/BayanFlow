@@ -4,22 +4,32 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { getAddress, isAddress } from 'viem'
 import { digest, passwordMatches } from './auth.js'
 import { transaction } from './database.js'
-import { checklist, clearanceChecklist, reviewDocuments, zoningChecklist } from './review.js'
+import { checklist, clearanceChecklist, reviewDocuments, tricycleChecklist, zoningChecklist } from './review.js'
 import { clearanceCertificate } from './certificate.js'
-import { BUSINESS_PERMIT, MAYORS_CLEARANCE, ZONING_CLEARANCE, services } from '../services.js'
+import { BUSINESS_PERMIT, MAYORS_CLEARANCE, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../services.js'
 import { amount } from './payment.js'
 import { decisionAllowed } from './workflow.js'
 
 const fileFields = Object.values(services).flatMap(service => service.documents.map(([name]) => ({ name, maxCount: 1 })))
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { files: 3, fileSize: 5 * 1024 * 1024 + 1, fields: 4, fieldSize: 4096 }
+  limits: { files: 3, fileSize: 5 * 1024 * 1024 + 1, fields: 5, fieldSize: 4096 }
 }).fields(fileFields)
 const sessionName = 'bayanflow_session'
 const sessionOptions = { httpOnly: true, sameSite: 'strict', path: '/' }
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
 const hex32 = /^0x[0-9a-f]{64}$/i
-const checklists = { [BUSINESS_PERMIT]: checklist, [MAYORS_CLEARANCE]: clearanceChecklist, [ZONING_CLEARANCE]: zoningChecklist }
+const checklists = {
+  [BUSINESS_PERMIT]: checklist,
+  [MAYORS_CLEARANCE]: clearanceChecklist,
+  [ZONING_CLEARANCE]: zoningChecklist,
+  [TRICYCLE_PERMIT]: tricycleChecklist,
+}
+const certificateFiles = {
+  [MAYORS_CLEARANCE]: 'bayanflow-demo-clearance.pdf',
+  [ZONING_CLEARANCE]: 'bayanflow-demo-zoning-clearance.pdf',
+  [TRICYCLE_PERMIT]: 'bayanflow-demo-tricycle-permit.pdf',
+}
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status })
@@ -101,7 +111,7 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
   api.get('/applications', async (req, res) => {
     role(req)
     const { rows } = await pool.query(
-      `SELECT a.id, a.title, a.service, a.address, a.purpose, a.status, a.revision, a.findings, a.ai_error, a.decision_note, a.created_at,
+      `SELECT a.id, a.title, a.service, a.address, a.purpose, a.vehicle_identifier, a.status, a.revision, a.findings, a.ai_error, a.decision_note, a.created_at,
               p.payer, p.tx_hash, CASE WHEN a.status = 'paid' THEN p.reference_id END AS receipt_ref,
               ARRAY(SELECT d.requirement FROM documents d WHERE d.application_id = a.id AND d.revision = a.revision) AS uploaded_documents
          FROM applications a LEFT JOIN payments p ON p.application_id = a.id
@@ -123,9 +133,13 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
         (previous && body.service !== undefined && body.service !== service)) fail(400, 'Choose a valid municipal service.')
     const clearance = service === MAYORS_CLEARANCE
     const zoning = service === ZONING_CLEARANCE
-    const title = requiredText(body.title, zoning ? 'an applicant or project name' : clearance ? 'a full name' : 'a business name', 120)
+    const tricycle = service === TRICYCLE_PERMIT
+    const title = requiredText(body.title, tricycle ? 'an operator name' : zoning ? 'an applicant or project name' : clearance ? 'a full name' : 'a business name', 120)
     const address = zoning || clearance ? requiredText(body.address, zoning ? 'a site address' : 'an address', 240) : null
-    const purpose = zoning || clearance ? requiredText(body.purpose, zoning ? 'a proposed use' : 'a purpose', 500) : null
+    const purpose = service !== BUSINESS_PERMIT
+      ? requiredText(body.purpose, tricycle ? 'a proposed route or zone' : zoning ? 'a proposed use' : 'a purpose', 500)
+      : null
+    const vehicleIdentifier = tricycle ? requiredText(body.vehicle_identifier, 'a fictional plate or unit ID', 40) : null
     const requirements = checklists[service]
     const names = requirements.map(item => item.requirement)
     const files = Object.fromEntries(Object.entries(req.files ?? {}).map(([name, [file]]) => [name, file]))
@@ -133,7 +147,8 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
       fail(400, 'Attach only PDFs for this service.')
     }
     if (!zoning && Object.keys(files).length !== names.length) fail(400, 'Attach a PDF for each fictional requirement.')
-    const applicant = zoning ? { name: title, address, purpose } : clearance ? { name: title, purpose } : undefined
+    const applicant = tricycle ? { name: title, vehicleIdentifier, purpose }
+      : zoning ? { name: title, address, purpose } : clearance ? { name: title, purpose } : undefined
     const result = await review(files, env, { requirements, applicant, allowPartial: zoning })
     const id = previous?.id ?? randomUUID()
     await transaction(pool, async db => {
@@ -146,13 +161,13 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
         number = current.revision + 1
         await db.query(
           `UPDATE applications SET title=$2, status='submitted', revision=$3, findings=$4, ai_error=$5,
-           decision_note=NULL, address=$6, purpose=$7 WHERE id=$1`,
-          [id, title, number, JSON.stringify(result.findings), result.error, address, purpose])
+           decision_note=NULL, address=$6, purpose=$7, vehicle_identifier=$8 WHERE id=$1`,
+          [id, title, number, JSON.stringify(result.findings), result.error, address, purpose, vehicleIdentifier])
       } else {
         await db.query(
-          `INSERT INTO applications (id,resident_id,title,status,findings,ai_error,service,address,purpose)
-           VALUES ($1,$2,$3,'submitted',$4,$5,$6,$7,$8)`,
-          [id, req.user.id, title, JSON.stringify(result.findings), result.error, service, address, purpose])
+          `INSERT INTO applications (id,resident_id,title,status,findings,ai_error,service,address,purpose,vehicle_identifier)
+           VALUES ($1,$2,$3,'submitted',$4,$5,$6,$7,$8,$9)`,
+          [id, req.user.id, title, JSON.stringify(result.findings), result.error, service, address, purpose, vehicleIdentifier])
       }
       for (const [name, file] of Object.entries(files)) {
         await db.query('INSERT INTO documents VALUES ($1,$2,$3,$4)', [id, number, name, file.buffer])
@@ -166,14 +181,14 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
   api.get('/applications/:id/certificate', async (req, res) => {
     role(req, 'resident')
     const application = await ownedApplication(pool, req)
-    const zoning = application.service === ZONING_CLEARANCE
-    if ((!zoning && application.service !== MAYORS_CLEARANCE) || application.status !== 'paid') fail(404, 'Certificate not found.')
+    const filename = certificateFiles[application.service]
+    if (!filename || application.status !== 'paid') fail(404, 'Certificate not found.')
     const { rows: [payment] } = await pool.query(
       'SELECT confirmed_at FROM payments WHERE application_id=$1 AND tx_hash IS NOT NULL AND confirmed_at IS NOT NULL',
       [application.id])
     if (!payment) fail(404, 'Certificate not found.')
     const pdf = await clearanceCertificate(application, payment)
-    res.attachment(zoning ? 'bayanflow-demo-zoning-clearance.pdf' : 'bayanflow-demo-clearance.pdf').send(pdf)
+    res.attachment(filename).send(pdf)
   })
   api.get('/applications/:id/documents/:requirement', async (req, res) => {
     role(req)

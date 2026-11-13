@@ -57,7 +57,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'documents'::regclass
-      AND conname IN ('documents_service_requirement_check', 'documents_municipal_requirement_check')
+      AND conname IN ('documents_service_requirement_check', 'documents_municipal_requirement_check', 'documents_tricycle_requirement_check')
   ) THEN
     ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_requirement_check;
     ALTER TABLE documents ADD CONSTRAINT documents_service_requirement_check
@@ -69,7 +69,7 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'applications'::regclass AND conname = 'applications_municipal_service_check'
+    WHERE conrelid = 'applications'::regclass AND conname IN ('applications_municipal_service_check', 'applications_tricycle_service_check')
   ) THEN
     ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_service_check;
     ALTER TABLE applications ADD CONSTRAINT applications_municipal_service_check
@@ -77,10 +77,33 @@ BEGIN
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'documents'::regclass AND conname = 'documents_municipal_requirement_check'
+    WHERE conrelid = 'documents'::regclass AND conname IN ('documents_municipal_requirement_check', 'documents_tricycle_requirement_check')
   ) THEN
     ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_service_requirement_check;
     ALTER TABLE documents ADD CONSTRAINT documents_municipal_requirement_check
       CHECK (requirement IN ('profile', 'premises', 'authorization', 'supporting', 'zoning_site', 'zoning_use', 'zoning_ownership'));
+  END IF;
+END $$;
+
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS vehicle_identifier text;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'applications'::regclass AND conname = 'applications_tricycle_service_check'
+  ) THEN
+    ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_municipal_service_check;
+    ALTER TABLE applications ADD CONSTRAINT applications_tricycle_service_check
+      CHECK (service IN ('business_permit', 'mayors_clearance', 'zoning_clearance', 'tricycle_permit'));
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'documents'::regclass AND conname = 'documents_tricycle_requirement_check'
+  ) THEN
+    ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_municipal_requirement_check;
+    ALTER TABLE documents ADD CONSTRAINT documents_tricycle_requirement_check
+      CHECK (requirement IN ('profile', 'premises', 'authorization', 'supporting', 'zoning_site', 'zoning_use', 'zoning_ownership',
+                             'tricycle_vehicle', 'tricycle_operator'));
   END IF;
 END $$;

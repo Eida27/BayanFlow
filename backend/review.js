@@ -18,6 +18,11 @@ export const zoningChecklist = [
   { requirement: 'zoning_ownership', description: 'Check that the PDF identifies the submitted site and shows ownership or permission for the submitted applicant or project.' },
 ]
 
+export const tricycleChecklist = [
+  { requirement: 'tricycle_vehicle', description: 'Require an explicit plate or unit ID matching the submitted vehicleIdentifier, plus the vehicle make and model. Flag a different ID as unclear and cite the ID shown in the PDF.' },
+  { requirement: 'tricycle_operator', description: 'Require an explicit operator name and route or zone matching the submitted name and purpose. Flag discrepancies as unclear.' },
+]
+
 export async function extractText(bytes) {
   const parser = new PDFParse({ data: new Uint8Array(bytes) })
   try {

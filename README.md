@@ -33,7 +33,16 @@ Follow the [contract setup and verification guide](contracts/README.md). Set `PA
 
 ## Rehearse the demo
 
-Run `pnpm db:setup` after updating an existing checkout to add the zoning service while preserving applications and receipts.
+Run `pnpm db:setup` after updating an existing checkout to add the latest services while preserving applications and receipts.
+
+### Tricycle Operator’s Permit
+
+1. As the resident, select **Tricycle Operator’s Permit**. Enter **Alex Sample**, **DEMO-TRI-042**, and **Market Loop**. Attach the mismatched vehicle registration sample and the operator record. The AI checklist should flag the different unit ID, **DEMO-TRI-099**.
+2. In a separate browser profile, sign in as staff, compare the PDFs with the form, and request corrections with a note.
+3. As the resident, resubmit with the matching vehicle registration and the same operator record. As staff, review the corrected revision and approve it.
+4. As the resident, pay **0.001 tBNB** with the funded testnet wallet. After verification, open the public receipt and download the private demo permit.
+
+The demo uses fictional records and follows the broad review, payment, and release sequence in [Mauban’s published Citizen’s Charter](https://mauban.gov.ph/wp-content/uploads/2025/03/Mauban_CitizensCharter_2024_1stEdition.pdf).
 
 ### Zoning / Locational Clearance
 

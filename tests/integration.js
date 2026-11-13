@@ -6,7 +6,7 @@ import { createApp } from '../backend/app.js'
 import { createPool } from '../backend/database.js'
 import { extractText } from '../backend/review.js'
 
-test('fictional permit from submission through retried receipt confirmation', async t => {
+test('municipal applications from submission through retried receipt confirmation', async t => {
   assert.ok(process.env.TEST_DATABASE_URL, 'Set TEST_DATABASE_URL to a disposable PostgreSQL database')
   const pool = createPool({ DATABASE_URL: process.env.TEST_DATABASE_URL })
   const schema = `test_${randomBytes(8).toString('hex')}`
@@ -33,16 +33,19 @@ test('fictional permit from submission through retried receipt confirmation', as
   await db.query("INSERT INTO documents VALUES ($1, 1, 'profile', $2)", [legacyId, legacyPdf])
   await db.query('INSERT INTO payments (application_id, reference_id, amount, tx_hash, contract, confirmed_at) VALUES ($1, $2, 1, $3, $4, now())',
     [legacyId, legacyReference, legacyHash, `0x${'22'.repeat(20)}`])
-  await db.query(setup.slice(0, setup.lastIndexOf('\nDO $$')))
+  const preTricycle = setup.split('\nALTER TABLE applications ADD COLUMN IF NOT EXISTS vehicle_identifier')[0]
+  await db.query(preTricycle.slice(0, preTricycle.lastIndexOf('\nDO $$')))
   await db.query("ALTER TABLE applications ADD CONSTRAINT applications_service_check CHECK (service IN ('business_permit', 'mayors_clearance'))")
   const legacyClearanceId = randomUUID()
   await db.query("INSERT INTO applications (id, resident_id, title, status, service) SELECT $1, id, 'Legacy clearance', 'submitted', 'mayors_clearance' FROM accounts WHERE email='other'", [legacyClearanceId])
   await db.query("INSERT INTO documents VALUES ($1, 1, 'supporting', $2)", [legacyClearanceId, legacyPdf])
+  await db.query(preTricycle)
   await db.query(setup)
   await db.query(setup)
   const hash = `0x${'33'.repeat(32)}`
   const clearanceHash = `0x${'55'.repeat(32)}`
   const zoningHash = `0x${'88'.repeat(32)}`
+  const tricycleHash = `0x${'99'.repeat(32)}`
   const payer = `0x${'11'.repeat(20)}`
   const contract = `0x${'22'.repeat(20)}`
   let verifications = 0
@@ -52,7 +55,7 @@ test('fictional permit from submission through retried receipt confirmation', as
     authorize: async payment => ({ referenceId: payment.reference_id }),
     verify: async (_payment, candidate) => {
       verifications++
-      return [clearanceHash, zoningHash, hash].includes(candidate) ? candidate : !candidate ? hash : null
+      return [clearanceHash, zoningHash, tricycleHash, hash].includes(candidate) ? candidate : !candidate ? hash : null
     }
   } })
   const server = await new Promise(resolve => {
@@ -241,4 +244,52 @@ test('fictional permit from submission through retried receipt confirmation', as
   assert.equal((await zoningCertificate(staff)).status, 403)
   assert.deepEqual(await (await request('/receipts/' + zoningPayment.referenceId)).json(),
     { referenceId: zoningPayment.referenceId, hash: zoningHash, amount: '1000000000000000', chainId: 97, contract })
+
+  const sample = name => readFile(new URL(`../frontend/public/samples/${name}.pdf`, import.meta.url))
+  const [operatorPdf, vehiclePdf, mismatchPdf] = await Promise.all(['tricycle-operator', 'tricycle-vehicle', 'tricycle-vehicle-mismatch'].map(sample))
+  const tricycleForm = (identifier = 'DEMO-TRI-042', operator = true, vehicle = mismatchPdf) => {
+    const body = new FormData()
+    body.set('service', 'tricycle_permit')
+    body.set('title', ' Alex Sample ')
+    body.set('vehicle_identifier', identifier)
+    body.set('purpose', 'Market Loop')
+    body.set('tricycle_vehicle', new Blob([vehicle]), 'vehicle.pdf')
+    if (operator) body.set('tricycle_operator', new Blob([operatorPdf]), 'operator.pdf')
+    return body
+  }
+  assert.equal((await submitZoning(tricycleForm(' '))).status, 400)
+  assert.equal((await submitZoning(tricycleForm('x'.repeat(41)))).status, 400)
+  assert.equal((await submitZoning(tricycleForm('DEMO-TRI-042', false))).status, 400)
+  assert.equal((await submitZoning(tricycleForm('DEMO-TRI-042', true, 'bad file'))).status, 400)
+  const tricycle = await submitZoning(tricycleForm(' DEMO-TRI-042 '))
+  assert.equal(tricycle.status, 201)
+  const { id: tricycleId } = await tricycle.json()
+  assert.equal((await current(tricycleId, staff)).vehicle_identifier, 'DEMO-TRI-042')
+  assert.match((await current(tricycleId, staff)).ai_error, /manually/)
+  const tricyclePath = applicationsPath + '/' + tricycleId
+  assert.equal((await review(tricyclePath, 'needs_correction', 1)).status, 200)
+  const fixed = tricycleForm('DEMO-TRI-042', true, vehiclePdf)
+  assert.equal((await request(tricyclePath + '/revision', { cookie: resident, body: fixed })).status, 200)
+  const oldVehicle = await request(tricyclePath + '/documents/tricycle_vehicle?revision=1', { cookie: staff })
+  assert.equal(oldVehicle.status, 200)
+  assert.match(await oldVehicle.text(), /DEMO-TRI-099/)
+  assert.equal((await review(tricyclePath, 'approved', 2)).status, 200)
+  const permit = cookie => request(tricyclePath + '/certificate', { cookie })
+  assert.equal((await permit(resident)).status, 404)
+  assert.equal((await request(tricyclePath + '/authorize', { cookie: resident, body: { payer } })).status, 200)
+  const confirmTricycle = () => request(tricyclePath + '/confirm', { cookie: resident, body: { hash: tricycleHash } })
+  const paidTricycle = await confirmTricycle()
+  assert.equal(paidTricycle.status, 200)
+  const tricyclePayment = await paidTricycle.json()
+  assert.deepEqual(await (await confirmTricycle()).json(), tricyclePayment)
+  const permitDownload = await permit(resident)
+  assert.equal(permitDownload.status, 200)
+  assert.match(permitDownload.headers.get('content-disposition'), /bayanflow-demo-tricycle-permit\.pdf/)
+  const permitText = await extractText(Buffer.from(await permitDownload.arrayBuffer()))
+  for (const expected of ['Tricycle Operator’s Permit', 'Alex Sample', 'DEMO-TRI-042', 'Market Loop', tricycleId,
+    'DEMO ONLY — NOT AN OFFICIAL MUNICIPAL DOCUMENT', 'Testnet payment confirmed']) assert.ok(permitText.includes(expected), expected)
+  assert.equal((await permit(other)).status, 404)
+  assert.equal((await permit(staff)).status, 403)
+  assert.deepEqual(await (await request('/receipts/' + tricyclePayment.referenceId)).json(),
+    { referenceId: tricyclePayment.referenceId, hash: tricycleHash, amount: '1000000000000000', chainId: 97, contract })
 })

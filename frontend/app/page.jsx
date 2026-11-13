@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createPublicClient, createWalletClient, custom, http } from 'viem'
 import { bscTestnet } from 'viem/chains'
 import { api, Header, Footer, explorer } from './shared'
-import { BUSINESS_PERMIT, ZONING_CLEARANCE, services } from '../../services.js'
+import { BUSINESS_PERMIT, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../../services.js'
 
 const statuses = {
   submitted: 'Under review',
@@ -30,7 +30,7 @@ function SignIn({ signIn, busy }) {
     <section className="intro">
       <span className="kicker"><i /> MUNICIPAL SERVICES</span>
       <h1>Municipal services<br />in one place<span>.</span></h1>
-      <p>Apply for a business permit, Mayor’s Clearance, or Zoning / Locational Clearance. Track staff review and verify your testnet payment.</p>
+      <p>Apply for municipal permits and clearances, track staff review, and verify your testnet payment.</p>
       <ol className="journey">
         <li><b>01</b><span>Submit</span></li>
         <li><b>02</b><span>Review</span></li>
@@ -60,6 +60,7 @@ function SignIn({ signIn, busy }) {
 function ApplicationForm({ application, service = application?.service ?? BUSINESS_PERMIT, submit, busy }) {
   const clearance = service !== BUSINESS_PERMIT
   const zoning = service === ZONING_CLEARANCE
+  const tricycle = service === TRICYCLE_PERMIT
   const { documents } = services[service]
   return <form className="stack" onSubmit={event => {
     event.preventDefault()
@@ -70,17 +71,19 @@ function ApplicationForm({ application, service = application?.service ?? BUSINE
     submit(data)
   }}>
     <input type="hidden" name="service" value={service} />
-    <label>{zoning ? 'Applicant or project name' : clearance ? 'Full name' : 'Business name'}<input name="title" required maxLength={120} defaultValue={application?.title ?? ''} /></label>
+    <label>{tricycle ? 'Operator name' : zoning ? 'Applicant or project name' : clearance ? 'Full name' : 'Business name'}<input name="title" required maxLength={120} defaultValue={application?.title ?? ''} /></label>
     {clearance && <>
-      <label>{zoning ? 'Site address' : 'Address'}<textarea name="address" rows="2" required maxLength={240} defaultValue={application?.address ?? ''} /></label>
-      <label>{zoning ? 'Proposed use' : 'Purpose of request'}<textarea name="purpose" rows="3" required maxLength={500} defaultValue={application?.purpose ?? ''} /></label>
+      {tricycle
+        ? <label>Fictional plate or unit ID<input name="vehicle_identifier" required maxLength={40} defaultValue={application?.vehicle_identifier ?? ''} /></label>
+        : <label>{zoning ? 'Site address' : 'Address'}<textarea name="address" rows="2" required maxLength={240} defaultValue={application?.address ?? ''} /></label>}
+      <label>{tricycle ? 'Proposed route or zone' : zoning ? 'Proposed use' : 'Purpose of request'}<textarea name="purpose" rows="3" required maxLength={500} defaultValue={application?.purpose ?? ''} /></label>
     </>}
     {zoning && <p>{application ? 'Reattach every PDF you want included in this revision.' : 'You can submit with missing PDFs. Staff needs all three before approval.'}</p>}
-    {documents.map(([name, label, sample, incomplete]) => <div className="upload" key={name}>
+    {documents.map(([name, label, sample, alternate, alternateLabel = 'Download incomplete sample']) => <div className="upload" key={name}>
       <label>{label}<input name={name} type="file" accept=".pdf,application/pdf" required={!zoning} /></label>
       <div className="document-links">
         <a href={'/samples/' + sample} download>Download sample</a>
-        {incomplete && <a href={'/samples/' + incomplete} download>Download incomplete sample</a>}
+        {alternate && <a href={'/samples/' + alternate} download>{alternateLabel}</a>}
       </div>
     </div>)}
     {!clearance && <a href="/samples/incomplete-premises-declaration.pdf" download>Download incomplete premises sample</a>}
@@ -92,6 +95,7 @@ function Details({ application, staff, run, busy, setPending, pending }) {
   const base = '/applications/' + application.id
   const clearance = (application.service ?? BUSINESS_PERMIT) !== BUSINESS_PERMIT
   const zoning = application.service === ZONING_CLEARANCE
+  const tricycle = application.service === TRICYCLE_PERMIT
   const { documents } = services[application.service ?? BUSINESS_PERMIT]
   const uploaded = new Set(application.uploaded_documents)
   const missingZoningDocs = zoning && documents.some(([name]) => !uploaded.has(name))
@@ -148,8 +152,8 @@ function Details({ application, staff, run, busy, setPending, pending }) {
 
   return <div className="details stack">
     {clearance && <div className="applicant-details">
-      <p><strong>{zoning ? 'Site address' : 'Address'}</strong> {application.address}</p>
-      <p><strong>{zoning ? 'Proposed use' : 'Purpose'}</strong> {application.purpose}</p>
+      <p>{tricycle ? <><strong>Plate or unit ID</strong> {application.vehicle_identifier}</> : <><strong>{zoning ? 'Site address' : 'Address'}</strong> {application.address}</>}</p>
+      <p><strong>{tricycle ? 'Proposed route or zone' : zoning ? 'Proposed use' : 'Purpose'}</strong> {application.purpose}</p>
     </div>}
     <div className="document-links">{documents.map(([name, label]) => zoning && !uploaded.has(name)
       ? <span key={name}>{label} · No PDF attached</span>
@@ -194,7 +198,7 @@ function Details({ application, staff, run, busy, setPending, pending }) {
       {pending && <button className="button secondary" disabled={busy} onClick={() => runPayment(() => verifyPayment())}>Search for a matching payment</button>}
     </section>}
     {application.status === 'paid' && <div className="document-links">
-      {!staff && clearance && <a href={`/api${base}/certificate`} download>{zoning ? 'Download demo zoning clearance PDF' : 'Download demo clearance PDF'}</a>}
+      {!staff && clearance && <a href={`/api${base}/certificate`} download>{tricycle ? 'Download demo tricycle permit PDF' : zoning ? 'Download demo zoning clearance PDF' : 'Download demo clearance PDF'}</a>}
       {application.receipt_ref && <a href={'/receipts/' + application.receipt_ref}>Open public receipt ↗</a>}
       {application.tx_hash && <a href={explorer + application.tx_hash} target="_blank" rel="noreferrer">View on BscScan ↗</a>}
     </div>}

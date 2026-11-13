@@ -10,7 +10,10 @@ const samples = {
   'zoning-site-incomplete': ['Site information sheet', 'Site address: 25 Example Avenue, Demo Town', 'Parcel reference: DT-042'],
   'zoning-use': ['Land-use declaration', 'Site address: 25 Example Avenue, Demo Town', 'Project: Paper Lantern Reading Room', 'Proposed activity: Operate a community reading room.'],
   'zoning-use-incomplete': ['Land-use declaration', 'Site address: 25 Example Avenue, Demo Town', 'Project: Paper Lantern Reading Room'],
-  'zoning-ownership': ['Owner authorization', 'Site address: 25 Example Avenue, Demo Town', 'I, Casey Sample, own this site and authorize its use', 'for the Paper Lantern Reading Room project.']
+  'zoning-ownership': ['Owner authorization', 'Site address: 25 Example Avenue, Demo Town', 'I, Casey Sample, own this site and authorize its use', 'for the Paper Lantern Reading Room project.'],
+  'tricycle-vehicle': ['Vehicle registration record', 'Unit ID: DEMO-TRI-042', 'Vehicle make: Sample Motors', 'Vehicle model: Town Runner'],
+  'tricycle-vehicle-mismatch': ['Vehicle registration record', 'Unit ID: DEMO-TRI-099', 'Vehicle make: Sample Motors', 'Vehicle model: Town Runner'],
+  'tricycle-operator': ['Operator record', 'Operator name: Alex Sample', 'Proposed route or zone: Market Loop']
 }
 
 const folder = new URL('../frontend/public/samples/', import.meta.url)
