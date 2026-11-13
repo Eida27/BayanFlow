@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 export async function api(path, body) {
   const response = await fetch('/api' + path, body === undefined ? { cache: 'no-store' } : {
     method: 'POST',
@@ -11,7 +13,7 @@ export async function api(path, body) {
 
 export function Header({ user, signOut, busy }) {
   return <header className="header"><div className="shell header-inner">
-    <a className="brand" href="/"><span className="brand-mark" aria-hidden="true">B</span>BayanFlow</a>
+    <Link className="brand" href="/"><span className="brand-mark" aria-hidden="true">B</span>BayanFlow</Link>
     <div className="header-actions">
       <span className="environment"><i /> Hackathon demo</span>
       {user && <button className="button quiet" disabled={busy} onClick={signOut}>Sign out</button>}

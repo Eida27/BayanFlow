@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { services } from '../../services.js'
 import { api } from './shared'
 import { applicationAnchor } from './staff-dashboard'
@@ -16,6 +18,12 @@ const dateTime = new Intl.DateTimeFormat('en-PH', {
 const feedPath = '/staff/notifications'
 
 export function StaffNotifications({ setUnreadCount }) {
+  const router = useRouter()
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const [feed, setFeed] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -33,7 +41,7 @@ export function StaffNotifications({ setUnreadCount }) {
         page = await api(feedPath + '?before=' + page.nextCursor)
         items.push(...page.items)
       }
-      if (version !== requestVersion.current) return
+      if (!mounted.current || version !== requestVersion.current) return
       setFeed({ ...page, items })
       setUnreadCount(page.unreadCount)
       setError('')
@@ -70,7 +78,7 @@ export function StaffNotifications({ setUnreadCount }) {
         ...current, unreadCount,
         items: current.items.map(item => matches(item) ? { ...item, read: true } : item),
       }))
-      if (href) window.location.assign(href)
+      if (href && mounted.current) router.push(href)
     })
   }
 
@@ -95,11 +103,11 @@ export function StaffNotifications({ setUnreadCount }) {
               <strong>{categories[item.kind].event}</strong>
               {!item.read && <span className="status">Unread</span>}
             </div>
-            <a href={href} onClick={event => {
-              if (item.read || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+            <Link href={href} onNavigate={event => {
+              if (item.read) return
               event.preventDefault()
               markRead('/' + item.id + '/read', {}, candidate => candidate.id === item.id, href)
-            }}>{item.title}</a>
+            }}>{item.title}</Link>
             <p>{services[item.service]?.label} · <time dateTime={item.created_at}>{dateTime.format(new Date(item.created_at))} PHT</time></p>
             {item.manual_review && <p className="notification-review">Manual review needed at submission</p>}
           </div>

@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 
 const sections = [
   ['dashboard', '/', 'Dashboard', 'See today’s activity and prioritize applications for review.'],
@@ -29,7 +30,16 @@ export function StaffIcon({ name }) {
 export default function StaffShell({ section, unreadCount, busy, signOut, children }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuButton = useRef(null)
+  const heading = useRef(null)
+  const previousSection = useRef(section)
   const [, , title, description] = sections.find(([id]) => id === section)
+
+  useEffect(() => {
+    if (previousSection.current === section) return
+    previousSection.current = section
+    setMenuOpen(false)
+    heading.current?.focus({ preventScroll: true })
+  }, [section])
 
   return <div className="staff-workspace">
     <a className="staff-skip" href="#staff-main">Skip to main content</a>
@@ -38,10 +48,10 @@ export default function StaffShell({ section, unreadCount, busy, signOut, childr
       setMenuOpen(false)
       menuButton.current.focus()
     }}>
-      <a className="staff-brand" href="/">
+      <Link className="staff-brand" href="/" onNavigate={() => setMenuOpen(false)}>
         <span className="staff-brand-mark" aria-hidden="true">B</span>
         <span>BayanFlow<small>Staff Portal</small></span>
-      </a>
+      </Link>
       <button type="button" className="staff-menu button" ref={menuButton} aria-expanded={menuOpen}
         aria-controls="staff-navigation" onClick={() => setMenuOpen(!menuOpen)}>
         <StaffIcon name="menu" /> Menu
@@ -51,17 +61,20 @@ export default function StaffShell({ section, unreadCount, busy, signOut, childr
       </button>
       <div id="staff-navigation" className="staff-rail-content" data-open={menuOpen}>
         <nav className="staff-nav" aria-label="Staff portal">
-          {sections.map(([id, href, label]) => <a key={id} href={href}
+          {sections.map(([id, href, label]) => <Link key={id} href={href} onNavigate={() => {
+            setMenuOpen(false)
+            if (section === id) heading.current?.focus({ preventScroll: true })
+          }}
             aria-current={id === section ? 'page' : undefined}>
             <StaffIcon name={id} /> {label}
             {id === 'notifications' && unreadCount > 0 && <span className="staff-unread-count">
               {unreadCount}<span className="staff-visually-hidden"> unread</span>
             </span>}
-          </a>)}
+          </Link>)}
         </nav>
         <div className="staff-rail-footer">
           <span>Hackathon demo</span>
-          <button className="button staff-signout" disabled={busy} onClick={signOut}>
+          <button className="button staff-signout" disabled={busy || !signOut} onClick={signOut}>
             <StaffIcon name="signout" /> Sign out
           </button>
         </div>
@@ -69,7 +82,7 @@ export default function StaffShell({ section, unreadCount, busy, signOut, childr
     </header>
     <main className="staff-main" id="staff-main" tabIndex={-1}>
       <header className="staff-page-heading">
-        <h1>{title}</h1>
+        <h1 ref={heading} tabIndex={-1}>{title}</h1>
         <p>{description}</p>
       </header>
       {children}

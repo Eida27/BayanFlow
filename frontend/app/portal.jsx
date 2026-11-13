@@ -1,6 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createPublicClient, createWalletClient, custom, http } from 'viem'
 import { bscTestnet } from 'viem/chains'
 import { api, Header, Footer, explorer } from './shared'
@@ -207,7 +209,7 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
     </section>}
     {application.status === 'paid' && <div className="document-links">
       {!staff && clearance && <a href={`/api${base}/certificate`} download>{tricycle ? 'Download demo tricycle permit PDF' : zoning ? 'Download demo zoning clearance PDF' : 'Download demo clearance PDF'}</a>}
-      {application.receipt_ref && <a href={'/receipts/' + application.receipt_ref}>Open public receipt ↗</a>}
+      {application.receipt_ref && <Link href={'/receipts/' + application.receipt_ref}>Open public receipt ↗</Link>}
       {application.tx_hash && <a href={explorer + application.tx_hash} target="_blank" rel="noreferrer">View on BscScan ↗</a>}
     </div>}
   </div>
@@ -241,6 +243,7 @@ function matchesQueueSearch(application, query) {
 }
 
 function QueueToolbar({ search, setSearch, queueFilter, busy }) {
+  const router = useRouter()
   const [filter, setFilter] = useState(queueFilter?.filter ?? '')
   const dated = filter === 'new-today' || filter === 'resubmissions'
   return <div className="staff-queue-tools">
@@ -250,7 +253,11 @@ function QueueToolbar({ search, setSearch, queueFilter, busy }) {
           onChange={event => setSearch(event.target.value)} />
       </span>
     </label>
-    <form action="/staff/applications" className="staff-queue-filters">
+    <form action="/staff/applications" className="staff-queue-filters" onSubmit={event => {
+      event.preventDefault()
+      const query = new URLSearchParams(new FormData(event.currentTarget))
+      router.push('/staff/applications' + (query.size ? '?' + query : ''))
+    }}>
       {search.trim() && <input type="hidden" name="q" value={search.trim()} />}
       <label>Queue filter
         <select name={filter ? 'filter' : undefined} value={filter} disabled={busy} onChange={event => setFilter(event.target.value)}>
@@ -267,17 +274,15 @@ function QueueToolbar({ search, setSearch, queueFilter, busy }) {
   </div>
 }
 
-export default function Portal({ section = 'dashboard' }) {
+export default function Portal({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [applications, setApplications] = useState(null)
-  const [queueFilter, setQueueFilter] = useState(null)
-  const [search, setSearch] = useState('')
-  const [decisionNotice, setDecisionNotice] = useState('')
-  const nextFocus = useRef(null)
-  const queueHeading = useRef(null)
+  const [applicationsLoading, setApplicationsLoading] = useState(true)
+  const [applicationsError, setApplicationsError] = useState('')
+  const applicationsRequest = useRef(0)
   const [showForm, setShowForm] = useState(false)
   const [residentNotice, setResidentNotice] = useState('')
   const startButton = useRef(null)
@@ -299,65 +304,64 @@ export default function Portal({ section = 'dashboard' }) {
       // The feed shows request errors and offers a retry.
     }
   }, [])
+  const router = useRouter()
+  const pathname = usePathname()
+  const section = pathname === '/' ? 'dashboard' : pathname.split('/')[2]
+  const staffRoute = ['applications', 'reports', 'notifications', 'settings'].includes(section)
   useVisibleRefresh(staff && section !== 'notifications' ? refreshUnread : null)
-  const staffQueueReady = staff && section === 'applications' && !loading && applications !== null
-
-  async function enterPortal(account) {
-    if (account?.role === 'staff' && section === 'dashboard' && /^#application-[0-9a-f-]+$/i.test(window.location.hash)) {
-      window.location.replace('/staff/applications' + window.location.hash)
-      return
-    }
-    if (account?.role === 'resident' && section !== 'dashboard') {
-      window.location.replace('/')
-      return
-    }
-    setUser(account)
-    if (account?.role === 'staff' && section === 'applications') {
-      setSearch(new URLSearchParams(window.location.search).get('q') ?? '')
-    }
-    if (account && (account.role === 'resident' || section === 'applications')) await refresh(account.role === 'staff')
-  }
-
-  async function loadApplications(forStaff) {
-    const params = new URLSearchParams(forStaff ? window.location.search : '')
-    params.delete('q')
-    const filter = params.get('filter')
-    const date = params.get('date')
-    const filtered = params.has('filter') || params.has('date')
-    setQueueFilter(filtered ? { filter, date } : null)
-    return (await api('/applications' + (filtered ? '?' + params : ''))).applications
-  }
-
-  async function refresh(forStaff = staff) {
-    setApplications(await loadApplications(forStaff))
-  }
+  const [sessionAttempt, setSessionAttempt] = useState(0)
+  const [sessionCheckFailed, setSessionCheckFailed] = useState(false)
+  const needsSession = loading && (pathname === '/' || staffRoute)
 
   useEffect(() => {
-    api('/me').then(({ user }) => enterPortal(user)).catch(error => setError(error.message)).finally(() => setLoading(false))
+    if (!needsSession) return
+    let active = true
+    api('/me').then(({ user }) => {
+      if (active) setUser(user)
+    }).catch(error => {
+      if (active) {
+        setError(error.message)
+        setSessionCheckFailed(true)
+      }
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    return () => { active = false }
+  }, [needsSession, sessionAttempt])
+
+  useEffect(() => {
+    if (user?.role === 'resident' && staffRoute) router.replace('/')
+    if (staff && section === 'dashboard' && /^#application-[0-9a-f-]+$/i.test(window.location.hash)) {
+      router.replace('/staff/applications' + window.location.hash)
+    }
+  }, [user, staff, staffRoute, section, router])
+
+  const residentHome = user?.role === 'resident' && pathname === '/'
+  const refresh = useCallback(async () => {
+    const request = ++applicationsRequest.current
+    setApplicationsLoading(true)
+    setApplicationsError('')
+    try {
+      const { applications } = await api('/applications')
+      if (request === applicationsRequest.current) setApplications(applications)
+    } catch (error) {
+      if (request === applicationsRequest.current) setApplicationsError(error.message)
+    } finally {
+      if (request === applicationsRequest.current) setApplicationsLoading(false)
+    }
   }, [])
 
   useEffect(() => {
-    if (!staffQueueReady) return
-    openLinkedApplication()
-    window.addEventListener('hashchange', openLinkedApplication)
-    return () => window.removeEventListener('hashchange', openLinkedApplication)
-  }, [staffQueueReady])
+    if (residentHome) refresh()
+  }, [residentHome, refresh])
 
   useEffect(() => {
-    if (busy || nextFocus.current === null) return
-    const target = nextFocus.current
-    nextFocus.current = null
-    if (target) openApplicationCard(applicationAnchor(target))
-    else queueHeading.current?.focus()
-  }, [applications, busy])
-
-  useEffect(() => {
-    if (busy || !residentFocus.current) return
-    if (applications?.some(application => application.id === residentFocus.current)) {
+    if (!residentHome || busy || applicationsLoading || !residentFocus.current) return
+    if (!applicationsError && applications?.some(application => application.id === residentFocus.current)) {
       openApplicationCard(applicationAnchor(residentFocus.current))
       residentFocus.current = null
     } else residentHeading.current?.focus()
-  }, [applications, busy])
+  }, [applications, applicationsError, applicationsLoading, busy, residentHome])
 
   async function run(action, refreshAfter = true, reportError = setError) {
     setBusy(true)
@@ -379,13 +383,166 @@ export default function Portal({ section = 'dashboard' }) {
       residentFocus.current = id
       afterSave()
       setResidentNotice(applicationId ? 'Application resubmitted for review.' : 'Application submitted for review.')
-      try {
-        await refresh(false)
-      } catch {
-        setApplications(null)
-        setError('Your application was saved. Refresh to see its latest status.')
-      }
+      await refresh()
     }, false, reportError)
+  }
+
+  function signOut() {
+    run(async () => {
+      await api('/logout', {})
+      setUser(null)
+      setUnreadCount(null)
+      applicationsRequest.current++
+      setApplications(null)
+      setApplicationsLoading(true)
+      setApplicationsError('')
+      setShowForm(false)
+      setResidentNotice('')
+      residentFocus.current = null
+      if (staffRoute || window.location.hash) router.replace('/')
+    }, false)
+  }
+
+  const feedback = <>
+    {error && <p className="error" role="alert">{error}</p>}
+    {busy && <p className="progress" role="status">Working on your request…</p>}
+  </>
+
+  if (pathname !== '/' && !staffRoute) return children
+  if (staffRoute && (loading || user?.role === 'resident' || (!user && sessionCheckFailed))) {
+    return <StaffShell section={section} busy>
+      {error && !loading && !user ? <div className="panel stack">
+        <p className="error" role="alert">{error}</p>
+        <button className="button secondary" onClick={() => {
+          setError('')
+          setLoading(true)
+          setSessionCheckFailed(false)
+          setSessionAttempt(attempt => attempt + 1)
+        }}>Retry session check</button>
+      </div> : <StaffLoading>Checking your session…</StaffLoading>}
+    </StaffShell>
+  }
+
+  if (staff) return <StaffShell section={section} unreadCount={unreadCount} busy={busy} signOut={signOut}>
+    {feedback}
+    {section === 'dashboard' && <StaffDashboard />}
+    {section === 'reports' && <Suspense fallback={<StaffLoading>Loading report…</StaffLoading>}><StaffReports /></Suspense>}
+    {section === 'notifications' && <StaffNotifications setUnreadCount={setUnreadCount} />}
+    {section === 'settings' && <StaffSettings setUnreadCount={setUnreadCount} />}
+    {section === 'applications' && <Suspense fallback={<StaffLoading>Loading applications…</StaffLoading>}><StaffQueueRoute /></Suspense>}
+  </StaffShell>
+
+  return <div className="resident-site">
+    <a className="resident-skip" href="#resident-main">Skip to main content</a>
+    <Header user={user} busy={busy} signOut={signOut} />
+    <main className="shell main" id="resident-main" tabIndex={-1}>
+      {loading ? <p role="status">Loading BayanFlow…</p> : !user ? <SignIn busy={busy} error={error} signIn={credentials => run(async () => {
+        const { user } = await api('/login', credentials)
+        setUser(user)
+      }, false)} /> : <>
+        <section className="resident-hero">
+          <div><span className="kicker">Resident Portal</span>
+          <h1>Municipal services</h1>
+          <p>Submit documents and follow your applications through review and payment.</p></div>
+          {!showForm && <button className="button primary" ref={startButton} onClick={() => setShowForm(true)} disabled={busy}>Start an application</button>}
+        </section>
+        {showForm && <section className="resident-new stack">
+          <h2>New application</h2>
+          <ResidentApplication busy={busy} submit={submitApplication} onCancel={() => {
+            setShowForm(false)
+            requestAnimationFrame(() => startButton.current?.focus())
+          }} />
+        </section>}
+        <section className="panel list-panel">
+          <div className="section-title"><h2 ref={residentHeading} tabIndex={-1}>Your applications</h2><button className="button secondary" disabled={busy || applicationsLoading} onClick={refresh}>{applicationsError ? 'Retry' : 'Refresh'}</button></div>
+          {residentNotice && <p className="notice" role="status">{residentNotice}</p>}
+          {error && <p className="error" role="alert">{error}</p>}
+          {applicationsLoading && <p role="status">{applications === null ? 'Loading applications…' : 'Refreshing applications…'}</p>}
+          {applicationsError && <p className="error" role="alert">{residentFocus.current ? 'Your application was saved. Retry to see its latest status.' : applicationsError}</p>}
+          {applications === null ? null : applications.length ? applications.map(application => <ApplicationCard key={application.id}
+            application={application} run={run} busy={busy} submitApplication={submitApplication} />)
+            : <div className="empty"><StaffIcon name="applications" /><h3>No applications yet</h3><p>Your submitted applications will appear here.</p>
+              {!showForm && <button className="button secondary" disabled={busy} onClick={() => setShowForm(true)}>Choose a service</button>}</div>}
+        </section>
+      </>}
+    </main>
+    <Footer />
+  </div>
+}
+
+function StaffLoading({ children }) {
+  return <div className="panel staff-loading" role="status">{children}</div>
+}
+
+function StaffQueueRoute() {
+  const params = useSearchParams()
+  const filter = params.get('filter')
+  const date = params.get('date')
+  const query = new URLSearchParams(params)
+  query.delete('q')
+  return <StaffQueue key={query.toString()} query={query.toString()}
+    queueFilter={filter !== null || date !== null ? { filter, date } : null}
+    initialSearch={params.get('q') ?? ''} />
+}
+
+function StaffQueue({ query, queueFilter, initialSearch }) {
+  const [applications, setApplications] = useState(null)
+  const [search, setSearch] = useState(initialSearch)
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [decisionNotice, setDecisionNotice] = useState('')
+  const [attempt, setAttempt] = useState(0)
+  const nextFocus = useRef(null)
+  const queueHeading = useRef(null)
+  const loadApplications = useCallback(async () =>
+    (await api('/applications' + (query ? '?' + query : ''))).applications, [query])
+
+  useEffect(() => {
+    let active = true
+    loadApplications().then(items => {
+      if (active) setApplications(items)
+    }).catch(error => {
+      if (active) setError(error.message)
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    return () => { active = false }
+  }, [loadApplications, attempt])
+
+  useEffect(() => { setSearch(initialSearch) }, [initialSearch])
+
+  useEffect(() => {
+    if (!applications) return
+    openLinkedApplication()
+    window.addEventListener('hashchange', openLinkedApplication)
+    return () => window.removeEventListener('hashchange', openLinkedApplication)
+  }, [applications])
+
+  useEffect(() => {
+    if (busy || nextFocus.current === null) return
+    const target = nextFocus.current
+    nextFocus.current = null
+    if (target) openApplicationCard(applicationAnchor(target))
+    else queueHeading.current?.focus()
+  }, [applications, busy])
+
+  function refresh() {
+    setError('')
+    setLoading(true)
+    setAttempt(value => value + 1)
+  }
+
+  async function run(action, reportError) {
+    setBusy(true)
+    setError('')
+    try {
+      await action()
+    } catch (error) {
+      reportError(error.message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   function decide(id, action, reportError) {
@@ -395,7 +552,7 @@ export default function Portal({ section = 'dashboard' }) {
       setDecisionNotice('Decision saved.')
       let updated
       try {
-        updated = await loadApplications(true)
+        updated = await loadApplications()
       } catch {
         setApplications(null)
         nextFocus.current = ''
@@ -413,10 +570,10 @@ export default function Portal({ section = 'dashboard' }) {
         }
       } else nextFocus.current = id
       setApplications(updated)
-    }, false, reportError)
+    }, reportError)
   }
 
-  const visibleApplications = staff ? applications?.filter(item => matchesQueueSearch(item, search)) : applications
+  const visibleApplications = applications?.filter(item => matchesQueueSearch(item, search))
   const filterLabel = queueFilter && (Object.hasOwn(applicationFilters, queueFilter.filter)
     ? applicationFilters[queueFilter.filter] : 'Application filter')
   const eventCount = queueFilter?.filter === 'resubmissions'
@@ -426,45 +583,18 @@ export default function Portal({ section = 'dashboard' }) {
     setSearch(value)
     const url = new URL(window.location.href)
     if (value.trim()) {
-      url.searchParams.set('q', value.trim())
+      url.searchParams.set('q', value)
       url.hash = ''
     } else url.searchParams.delete('q')
     window.history.replaceState(null, '', url)
   }
 
-  function signOut() {
-    run(async () => {
-      await api('/logout', {})
-      setUser(null)
-      setUnreadCount(null)
-      setApplications(null)
-      setShowForm(false)
-      setResidentNotice('')
-      residentFocus.current = null
-      setSearch('')
-      setDecisionNotice('')
-      if (section !== 'dashboard') window.location.replace('/')
-    }, false)
-  }
-
-  const feedback = <>
-    {error && <p className="error" role="alert">{error}</p>}
-    {busy && <p className="progress" role="status">Working on your request…</p>}
-  </>
-
-  if (staff) return <StaffShell section={section} unreadCount={unreadCount} busy={busy} signOut={signOut}>
-    {feedback}
-    {section === 'dashboard' && <StaffDashboard />}
-    {section === 'reports' && <StaffReports />}
-    {section === 'notifications' && <StaffNotifications setUnreadCount={setUnreadCount} />}
-    {section === 'settings' && <StaffSettings setUnreadCount={setUnreadCount} />}
-    {section === 'applications' && <section className="panel staff-queue">
+  return <section className="panel staff-queue">
       <div className="section-title">
         <h2 ref={queueHeading} tabIndex={-1}>Application queue</h2>
-        <button className="button secondary" disabled={busy || loading} onClick={() => run(refresh, false)}>Refresh</button>
+        <button className="button secondary" disabled={busy || loading} onClick={refresh}>{error ? 'Retry' : 'Refresh'}</button>
       </div>
-      {!loading && <QueueToolbar key={queueFilter?.filter ?? 'all'} queueFilter={queueFilter}
-        search={search} setSearch={updateSearch} busy={busy} />}
+      <QueueToolbar queueFilter={queueFilter} search={search} setSearch={updateSearch} busy={busy || loading} />
       <div className="queue-filter">
         <p role="status">
           {filterLabel && <strong>{filterLabel} · </strong>}
@@ -479,51 +609,17 @@ export default function Portal({ section = 'dashboard' }) {
             updateSearch('')
             document.getElementById('staff-queue-search')?.focus()
           }}>Clear search</button>}
-          {queueFilter && <a href={'/staff/applications' + (search.trim() ? '?' + new URLSearchParams({ q: search.trim() }) : '')}>Clear filter</a>}
+          {queueFilter && <Link href={'/staff/applications' + (search.trim() ? '?' + new URLSearchParams({ q: search.trim() }) : '')}>Clear filter</Link>}
         </div>
       </div>
+      {error && <p className="error" role="alert">{error}</p>}
       {decisionNotice && <p className="notice" role="status">{decisionNotice}</p>}
-      {!visibleApplications ? <p role="status">{busy || loading ? 'Loading applications…' : 'Applications are unavailable.'}</p>
+      {loading && <StaffLoading>Loading applications…</StaffLoading>}
+      {!visibleApplications ? (!loading && <p>Applications are unavailable.</p>)
         : visibleApplications.length ? visibleApplications.map(application => <ApplicationCard key={application.id}
-          application={application} staff run={run} decide={decide} busy={busy} />)
+          application={application} staff decide={decide} busy={busy || loading} />)
         : <div className="empty"><h3>{search.trim() || queueFilter ? 'No matching applications' : 'No applications yet'}</h3>
           <p>{search.trim() ? 'Try another title or service name.' : queueFilter ? 'Choose another filter to see more applications.' : 'Submitted applications will appear here.'}</p>
         </div>}
-    </section>}
-  </StaffShell>
-
-  return <div className="resident-site">
-    <a className="resident-skip" href="#resident-main">Skip to main content</a>
-    <Header user={user} busy={busy} signOut={signOut} />
-    <main className="shell main" id="resident-main" tabIndex={-1}>
-      {loading ? <p role="status">Loading BayanFlow…</p> : !user ? <SignIn busy={busy} error={error} signIn={credentials => run(async () => {
-        await api('/login', credentials)
-        await enterPortal((await api('/me')).user)
-      }, false)} /> : <>
-        <section className="resident-hero">
-          <div><span className="kicker">Resident Portal</span>
-          <h1>Municipal services</h1>
-          <p>Submit documents and follow your applications through review and payment.</p></div>
-          {!showForm && <button className="button primary" ref={startButton} onClick={() => setShowForm(true)} disabled={busy}>Start an application</button>}
-        </section>
-        {showForm && <section className="resident-new stack">
-          <h2>New application</h2>
-          <ResidentApplication busy={busy} submit={submitApplication} onCancel={() => {
-            setShowForm(false)
-            requestAnimationFrame(() => startButton.current?.focus())
-          }} />
-        </section>}
-        <section className="panel list-panel">
-          <div className="section-title"><h2 ref={residentHeading} tabIndex={-1}>Your applications</h2><button className="button secondary" disabled={busy} onClick={() => run(refresh, false)}>{busy ? 'Working…' : applications === null || error ? 'Retry' : 'Refresh'}</button></div>
-          {residentNotice && <p className="notice" role="status">{residentNotice}</p>}
-          {error && <p className="error" role="alert">{error}</p>}
-          {applications === null ? <p role="status">{busy ? 'Loading applications…' : 'Applications are unavailable.'}</p> : applications.length ? applications.map(application => <ApplicationCard key={application.id}
-            application={application} run={run} busy={busy} submitApplication={submitApplication} />)
-            : <div className="empty"><StaffIcon name="applications" /><h3>No applications yet</h3><p>Your submitted applications will appear here.</p>
-              {!showForm && <button className="button secondary" disabled={busy} onClick={() => setShowForm(true)}>Choose a service</button>}</div>}
-        </section>
-      </>}
-    </main>
-    <Footer />
-  </div>
+    </section>
 }

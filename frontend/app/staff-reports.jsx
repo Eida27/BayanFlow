@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { processingTime, reportRange } from '../../report-dates.js'
 import { api } from './shared'
 
@@ -37,6 +38,14 @@ function SubmissionTrend({ trend, bucket }) {
 }
 
 export default function StaffReports() {
+  const params = useSearchParams()
+  const from = params.get('from')
+  const to = params.get('to')
+  return <ReportContent key={JSON.stringify([from, to])} from={from} to={to} />
+}
+
+function ReportContent({ from, to }) {
+  const router = useRouter()
   const [filters, setFilters] = useState(null)
   const [report, setReport] = useState(null)
   const [error, setError] = useState('')
@@ -45,12 +54,10 @@ export default function StaffReports() {
 
   useEffect(() => {
     let active = true
-    const query = new URLSearchParams(window.location.search)
-    const dates = { from: query.get('from') ?? undefined, to: query.get('to') ?? undefined }
+    const dates = { from: from ?? undefined, to: to ?? undefined }
     try {
       const range = reportRange(dates)
       const applied = new URLSearchParams({ from: range.from, to: range.to })
-      if (!query.has('from') && !query.has('to')) window.history.replaceState(null, '', '?' + applied)
       setFilters(range)
       api('/staff/reports?' + applied)
         .then(result => { if (active) setReport(result) })
@@ -63,18 +70,20 @@ export default function StaffReports() {
       setLoading(false)
     }
     return () => { active = false }
-  }, [attempt])
+  }, [attempt, from, to])
 
   return <div className="report-layout">
     <section className="panel stack" aria-labelledby="report-dates">
       <h2 id="report-dates">Date range</h2>
       <p>Dates are inclusive in Asia/Manila. New applications, resubmissions, first decisions, and payments each use their own event date. Resubmission history begins when event recording was enabled.</p>
       {filters && <form action="/staff/reports" className="report-filters" onSubmit={event => {
+        event.preventDefault()
         const dates = Object.fromEntries(new FormData(event.currentTarget))
         try {
           reportRange(dates)
+          setError('')
+          router.push('/staff/reports?' + new URLSearchParams(dates))
         } catch (error) {
-          event.preventDefault()
           setError(error.message)
         }
       }}>

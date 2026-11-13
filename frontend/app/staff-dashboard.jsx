@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import Link from 'next/link'
 import { BUSINESS_PERMIT, services } from '../../services.js'
 import { applicationFilterQuery, applicationStatuses } from '../../application-filters.js'
 import { api } from './shared'
@@ -20,8 +21,8 @@ export function openLinkedApplication() {
 }
 
 function CountLink({ filter, date, count, label }) {
-  return <a href={'/staff/applications' + applicationFilterQuery(filter, date)}
-    aria-label={`${count} ${label}`}>{count}</a>
+  return <Link href={'/staff/applications' + applicationFilterQuery(filter, date)}
+    aria-label={`${count} ${label}`}>{count}</Link>
 }
 
 function PriorityGroup({ filter, title, group: { count, items }, emptyMessage }) {
@@ -30,10 +31,10 @@ function PriorityGroup({ filter, title, group: { count, items }, emptyMessage })
     {items.length ? <ul className="priority-list">
       {items.map(application =>
         <li key={application.id}>
-          <a href={`/staff/applications#${applicationAnchor(application.id)}`}>
+          <Link href={`/staff/applications#${applicationAnchor(application.id)}`}>
             <strong>{application.title}</strong>
             <small>{services[application.service ?? BUSINESS_PERMIT].label}</small>
-          </a>
+          </Link>
         </li>
       )}
     </ul> : <p>{emptyMessage}</p>}
@@ -80,7 +81,7 @@ export default function StaffDashboard() {
     {summary && <section className="panel dashboard-panel stack" aria-labelledby="workload-title">
       <div className="section-title">
         <h2 id="workload-title">Pending Workload</h2>
-        <a className="button secondary" href="/staff/applications">View application queue</a>
+        <Link className="button secondary" href="/staff/applications">View application queue</Link>
       </div>
       <div className="priority-groups">
         <PriorityGroup filter="manual-review" title="Needs manual document review" group={summary.manualReview} emptyMessage="No applications need manual document review." />

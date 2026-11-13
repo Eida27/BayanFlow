@@ -1,5 +1,4 @@
 import { notFound } from 'next/navigation'
-import Portal from '../../portal'
 
 const sections = ['applications', 'reports', 'notifications', 'settings']
 
@@ -10,5 +9,5 @@ export function generateStaticParams() {
 export default async function StaffPage({ params }) {
   const { section } = await params
   if (!sections.includes(section)) notFound()
-  return <Portal section={section} />
+  return null
 }

@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState, use } from 'react'
+import Link from 'next/link'
 import { formatEther } from 'viem'
-import { api, Header, Footer, explorer } from '../../shared'
+import { api, Header, Footer, explorer } from '../../../shared'
 
 export default function Receipt({ params }) {
   const { referenceId } = use(params)
@@ -37,7 +38,7 @@ export default function Receipt({ params }) {
           </div>
           <dl><dt>Reference</dt><dd>{receipt.referenceId}</dd><dt>Transaction</dt><dd><a href={explorer + receipt.hash} target="_blank" rel="noreferrer">{receipt.hash} ↗</a></dd><dt>Payment contract</dt><dd>{receipt.contract}</dd></dl>
         </> : <p role="status">Loading receipt…</p>}
-        <a className="button secondary" href="/">Return to BayanFlow</a>
+        <Link className="button secondary" href="/">Return to BayanFlow</Link>
       </section>
     </main>
     <Footer />

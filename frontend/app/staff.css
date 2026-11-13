@@ -114,6 +114,7 @@
   box-shadow: 0 2px 4px #18372a08;
 }
 .staff-main h2 { font-size: clamp(1.2rem, 2.25vw, 1.55rem); letter-spacing: -.025em; }
+.staff-main .staff-loading { min-height: 110px; color: var(--muted); }
 .staff-main .section-title { flex-wrap: wrap; margin-bottom: 12px; }
 .staff-main .stack { gap: 16px; }
 .staff-main a.button, .staff-clear-actions a { display: inline-flex; align-items: center; text-decoration: none; }
