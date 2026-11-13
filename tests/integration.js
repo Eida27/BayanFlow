@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
-import { createApp } from '../api/app.js'
-import { createPool } from '../api/database.js'
+import { createApp } from '../backend/app.js'
+import { createPool } from '../backend/database.js'
 
 test('fictional permit from submission through retried receipt confirmation', async t => {
   assert.ok(process.env.TEST_DATABASE_URL, 'Set TEST_DATABASE_URL to a disposable PostgreSQL database')
@@ -18,8 +18,8 @@ test('fictional permit from submission through retried receipt confirmation', as
     await db.query(`DROP SCHEMA ${schema} CASCADE`)
     await db.end()
   })
-  await db.query(await readFile(new URL('../api/schema.sql', import.meta.url), 'utf8'))
-  const { hashPassword } = await import('../api/auth.js')
+  await db.query(await readFile(new URL('../database/schema.sql', import.meta.url), 'utf8'))
+  const { hashPassword } = await import('../backend/auth.js')
   for (const [name, role] of [['resident', 'resident'], ['other', 'resident'], ['staff', 'staff']]) {
     await db.query('INSERT INTO accounts (email,password_hash,role) VALUES ($1,$2,$3)', [name, hashPassword('demo'), role])
   }
@@ -60,7 +60,7 @@ test('fictional permit from submission through retried receipt confirmation', as
       premises: complete ? 'premises-declaration' : 'incomplete-premises-declaration',
       authorization: 'owner-authorization'
     })) {
-      body.append(key, new Blob([await readFile(new URL(`../public/samples/${file}.pdf`, import.meta.url))]), `${file}.pdf`)
+      body.append(key, new Blob([await readFile(new URL(`../frontend/public/samples/${file}.pdf`, import.meta.url))]), `${file}.pdf`)
     }
     return body
   }

@@ -4,7 +4,7 @@ import { hashPassword } from './auth.js'
 
 const pool = createPool()
 try {
-  const schema = await readFile(new URL('./schema.sql', import.meta.url), 'utf8')
+  const schema = await readFile(new URL('../database/schema.sql', import.meta.url), 'utf8')
   await transaction(pool, async db => {
     await db.query(schema)
     for (const [role, password] of [['resident', 'resident-demo'], ['staff', 'staff-demo']]) {

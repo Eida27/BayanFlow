@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
-import { checklist, extractText, validateFindings } from '../api/review.js'
-import { decisionAllowed } from '../api/workflow.js'
+import { checklist, extractText, validateFindings } from '../backend/review.js'
+import { decisionAllowed } from '../backend/workflow.js'
 
 test('staff can decide only a submitted application', () => {
   assert.ok(decisionAllowed('submitted', 'needs_correction'))
@@ -23,7 +23,7 @@ test('requires exactly one grounded result per checklist item', () => {
 })
 
 test('bundled PDFs distinguish complete and incomplete premises declarations', async () => {
-  const sample = name => readFile(new URL(`../public/samples/${name}.pdf`, import.meta.url)).then(extractText)
+  const sample = name => readFile(new URL(`../frontend/public/samples/${name}.pdf`, import.meta.url)).then(extractText)
   assert.match(await sample('business-profile'), /Paper Lantern/)
   assert.match(await sample('owner-authorization'), /authorizes/)
   assert.match(await sample('premises-declaration'), /Intended use: Stationery retail/)

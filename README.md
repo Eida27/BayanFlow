@@ -2,6 +2,15 @@
 
 BayanFlow is a hackathon prototype for a fictional municipal Business Permit Request. Residents submit sample PDFs, receive an AI completeness check, correct their submission after staff feedback, and pay a simulated 0.001 tBNB fee on BSC Testnet. The receipt links to the public transaction.
 
+## Project layout
+
+- `frontend/` contains the Next.js app and public assets.
+- `backend/` contains the Express API, business logic, and database setup command.
+- `database/schema.sql` defines the PostgreSQL schema.
+- `contracts/` contains the Solidity contract, tests, and deployment scripts.
+
+Run the application commands from the repository root.
+
 ## Start locally
 
 Use Node.js 24, pnpm 11.25, and Docker Compose. For the live AI and payment steps, use an OpenAI API key and a MetaMask wallet funded with testnet tBNB.
@@ -16,7 +25,7 @@ Use Node.js 24, pnpm 11.25, and Docker Compose. For the live AI and payment step
 | Resident | resident@bayanflow.test | resident-demo |
 | Staff | staff@bayanflow.test | staff-demo |
 
-Use separate browser profiles for resident and staff. Only upload fictional material. The sample PDFs are bundled under `public/samples` and linked from the app. Express keeps uploaded files private and stores them in PostgreSQL. AI receives extracted text, and staff can proceed manually when extraction or AI is unavailable. `docker compose down` stops the database and retains the volume.
+Use separate browser profiles for resident and staff. Only upload fictional material. The sample PDFs are bundled under `frontend/public/samples` and linked from the app. Express keeps uploaded files private and stores them in PostgreSQL. AI receives extracted text, and staff can proceed manually when extraction or AI is unavailable. `docker compose down` stops the database and retains the volume.
 
 ## Configure BSC Testnet
 

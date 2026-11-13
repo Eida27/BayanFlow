@@ -3,9 +3,8 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const children = [
-  spawn(process.execPath, ['--env-file-if-exists=.env', 'api/server.js'], { stdio: 'inherit' }),
-  // Next loads .env itself and forwards Node flags to its worker.
-  spawn(process.execPath, [require.resolve('next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1'], { stdio: 'inherit' })
+  spawn(process.execPath, ['--env-file-if-exists=.env', 'backend/server.js'], { stdio: 'inherit' }),
+  spawn(process.execPath, [require.resolve('next/dist/bin/next'), 'dev', 'frontend', '--hostname', '127.0.0.1'], { stdio: 'inherit' })
 ]
 function stop(code) {
   for (const child of children) child.kill()

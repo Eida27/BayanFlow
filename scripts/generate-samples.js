@@ -7,7 +7,7 @@ const samples = {
   'owner-authorization': ['Owner authorization', 'Casey Sample authorizes Paper Lantern Stationery', 'to use 10 Example Lane, Demo Town.']
 }
 
-const folder = new URL('../public/samples/', import.meta.url)
+const folder = new URL('../frontend/public/samples/', import.meta.url)
 await mkdir(folder, { recursive: true })
 for (const [filename, lines] of Object.entries(samples)) {
   const stream = [
