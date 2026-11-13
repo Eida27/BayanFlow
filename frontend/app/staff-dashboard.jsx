@@ -1,13 +1,13 @@
 import { useCallback, useRef, useState } from 'react'
 import { BUSINESS_PERMIT, services } from '../../services.js'
-import { dashboardStatuses } from './staff-analytics.js'
+import { applicationFilterQuery, applicationStatuses } from '../../application-filters.js'
 import { api } from './shared'
 import { useVisibleRefresh } from './use-visible-refresh'
 
 export const applicationAnchor = id => `application-${id}`
 
-export function openLinkedApplication() {
-  const card = document.getElementById(window.location.hash.slice(1))
+export function openApplicationCard(anchor) {
+  const card = document.getElementById(anchor)
   if (!(card instanceof HTMLDetailsElement)) return
 
   card.open = true
@@ -15,9 +15,18 @@ export function openLinkedApplication() {
   card.scrollIntoView({ block: 'start' })
 }
 
-function PriorityGroup({ title, group: { count, items }, emptyMessage }) {
+export function openLinkedApplication() {
+  openApplicationCard(window.location.hash.slice(1))
+}
+
+function CountLink({ filter, date, count, label }) {
+  return <a href={'/staff/applications' + applicationFilterQuery(filter, date)}
+    aria-label={`${count} ${label}`}>{count}</a>
+}
+
+function PriorityGroup({ filter, title, group: { count, items }, emptyMessage }) {
   return <section className="priority-group">
-    <h3>{title} <span className="priority-count">{count}</span></h3>
+    <h3>{title} <span className="priority-count"><CountLink filter={filter} count={count} label={title} /></span></h3>
     {items.length ? <ul className="priority-list">
       {items.map(application =>
         <li key={application.id}>
@@ -63,8 +72,8 @@ export default function StaffDashboard() {
       {summary && <>
         <p className="dashboard-date"><time dateTime={summary.date}>{summary.date}</time> · Manila time</p>
         <dl className="status-totals">
-          <div className="status-total"><dt>New applications</dt><dd>{summary.activity.submitted}</dd></div>
-          <div className="status-total"><dt>Resubmissions</dt><dd>{summary.activity.resubmitted}</dd></div>
+          <div className="status-total"><dt>New applications</dt><dd><CountLink filter="new-today" date={summary.date} count={summary.activity.submitted} label="New applications" /></dd></div>
+          <div className="status-total"><dt>Resubmissions</dt><dd><CountLink filter="resubmissions" date={summary.date} count={summary.activity.resubmitted} label="Resubmissions" /></dd></div>
         </dl>
       </>}
     </section>
@@ -74,13 +83,13 @@ export default function StaffDashboard() {
         <a href="/staff/applications">View application queue</a>
       </div>
       <div className="priority-groups">
-        <PriorityGroup title="Needs manual document review" group={summary.manualReview} emptyMessage="No applications need manual document review." />
-        <PriorityGroup title="Awaiting approval" group={summary.awaitingApproval} emptyMessage="No applications are awaiting approval." />
+        <PriorityGroup filter="manual-review" title="Needs manual document review" group={summary.manualReview} emptyMessage="No applications need manual document review." />
+        <PriorityGroup filter="awaiting-approval" title="Awaiting approval" group={summary.awaitingApproval} emptyMessage="No applications are awaiting approval." />
       </div>
       <h3>Current application statuses</h3>
       <dl className="status-totals">
-        {Object.entries(dashboardStatuses).map(([status, label]) => <div className="status-total" key={status}>
-          <dt>{label}</dt><dd>{summary.counts[status]}</dd>
+        {Object.entries(applicationStatuses).map(([status, label]) => <div className="status-total" key={status}>
+          <dt>{label}</dt><dd><CountLink filter={status} count={summary.counts[status]} label={label} /></dd>
         </div>)}
       </dl>
     </section>}

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPublicClient, createWalletClient, custom, http } from 'viem'
 import { bscTestnet } from 'viem/chains'
 import { api, Header, Footer, explorer } from './shared'
-import StaffDashboard, { applicationAnchor, openLinkedApplication } from './staff-dashboard'
+import StaffDashboard, { applicationAnchor, openApplicationCard, openLinkedApplication } from './staff-dashboard'
+import { applicationFilters } from '../../application-filters.js'
 import StaffReports from './staff-reports'
 import { StaffNotifications, StaffSettings } from './staff-notifications'
 import { useVisibleRefresh } from './use-visible-refresh'
@@ -95,7 +96,7 @@ function ApplicationForm({ application, service = application?.service ?? BUSINE
   </form>
 }
 
-function Details({ application, staff, run, busy, setPending, pending }) {
+function Details({ application, staff, run, decide, busy, setPending, pending }) {
   const base = '/applications/' + application.id
   const clearance = (application.service ?? BUSINESS_PERMIT) !== BUSINESS_PERMIT
   const zoning = application.service === ZONING_CLEARANCE
@@ -177,7 +178,7 @@ function Details({ application, staff, run, busy, setPending, pending }) {
     {staff && application.status === 'submitted' && <form className="stack" onSubmit={event => {
       event.preventDefault()
       const data = new FormData(event.currentTarget)
-      run(() => api(base + '/decision', { status: data.get('status'), note: data.get('note'), revision: application.revision }))
+      decide(application.id, () => api(base + '/decision', { status: data.get('status'), note: data.get('note'), revision: application.revision }))
     }}>
       {missingZoningDocs && <p className="notice">All three zoning PDFs must be attached before approval.</p>}
       <label>Decision<select name="status" defaultValue="" required><option value="" disabled>Choose a decision</option><option value="approved" disabled={missingZoningDocs}>Approve for payment</option><option value="needs_correction">Request corrections</option><option value="rejected">Reject</option></select></label>
@@ -235,6 +236,9 @@ export default function Portal({ section = 'dashboard' }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [applications, setApplications] = useState(null)
+  const [queueFilter, setQueueFilter] = useState(null)
+  const nextFocus = useRef(null)
+  const queueHeading = useRef(null)
   const [showForm, setShowForm] = useState(false)
   const [service, setService] = useState(BUSINESS_PERMIT)
   const [unreadCount, updateUnreadCount] = useState(null)
@@ -267,11 +271,20 @@ export default function Portal({ section = 'dashboard' }) {
       return
     }
     setUser(account)
-    if (account && (account.role === 'resident' || section === 'applications')) await refresh()
+    if (account && (account.role === 'resident' || section === 'applications')) await refresh(account.role === 'staff')
   }
 
-  async function refresh() {
-    setApplications((await api('/applications')).applications)
+  async function loadApplications(forStaff) {
+    const params = new URLSearchParams(forStaff ? window.location.search : '')
+    const filter = params.get('filter')
+    const date = params.get('date')
+    const filtered = params.has('filter') || params.has('date')
+    setQueueFilter(filtered ? { filter, date } : null)
+    return (await api('/applications' + (filtered ? '?' + params : ''))).applications
+  }
+
+  async function refresh(forStaff = staff) {
+    setApplications(await loadApplications(forStaff))
   }
 
   useEffect(() => {
@@ -285,6 +298,14 @@ export default function Portal({ section = 'dashboard' }) {
     return () => window.removeEventListener('hashchange', openLinkedApplication)
   }, [staffQueueReady])
 
+  useEffect(() => {
+    if (busy || nextFocus.current === null) return
+    const target = nextFocus.current
+    nextFocus.current = null
+    if (target) openApplicationCard(applicationAnchor(target))
+    else queueHeading.current?.focus()
+  }, [applications, busy])
+
   async function run(action, refreshAfter = true, reportError = setError) {
     setBusy(true)
     setError('')
@@ -297,6 +318,28 @@ export default function Portal({ section = 'dashboard' }) {
       setBusy(false)
     }
   }
+
+  function decide(id, action) {
+    run(async () => {
+      await action()
+      const updated = await loadApplications(true)
+      if (queueFilter && !updated.some(item => item.id === id)) {
+        const reviewedIndex = applications.findIndex(item => item.id === id)
+        const remaining = new Set(updated.map(item => item.id))
+        nextFocus.current = applications.slice(reviewedIndex + 1).find(item => remaining.has(item.id))?.id
+          ?? updated[0]?.id ?? ''
+        if (window.location.hash === '#' + applicationAnchor(id)) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search)
+        }
+      }
+      setApplications(updated)
+    }, false)
+  }
+
+  const filterLabel = queueFilter && (Object.hasOwn(applicationFilters, queueFilter.filter)
+    ? applicationFilters[queueFilter.filter] : 'Application filter')
+  const eventCount = queueFilter?.filter === 'resubmissions'
+    ? applications?.reduce((sum, item) => sum + item.event_count, 0) : null
 
   return <>
     <Header user={user} busy={busy} signOut={() => run(async () => {
@@ -343,8 +386,15 @@ export default function Portal({ section = 'dashboard' }) {
           })} />
         </section>}
         {(!staff || section === 'applications') && <section className="panel list-panel">
-          <div className="section-title"><h2>{staff ? 'Application queue' : 'Your applications'}</h2><button className="button secondary" disabled={busy} onClick={() => run(refresh, false)}>Refresh</button></div>
-          {applications === null ? <p>{busy ? 'Loading applications…' : 'Applications are unavailable.'}</p> : applications.length ? applications.map(application => <ApplicationCard key={application.id} application={application} staff={staff} run={run} busy={busy} />) : <div className="empty"><h3>No applications yet</h3><p>{staff ? 'Submitted applications will appear here.' : 'Choose a municipal service to start an application.'}</p></div>}
+          <div className="section-title"><h2 ref={queueHeading} tabIndex={-1}>{filterLabel || (staff ? 'Application queue' : 'Your applications')}</h2><button className="button secondary" disabled={busy} onClick={() => run(refresh, false)}>Refresh</button></div>
+          {queueFilter && <div className="queue-filter">
+            <p role="status">{queueFilter.date && <>{queueFilter.date} · Manila time · </>}{applications !== null && <>
+              {applications.length} matching {applications.length === 1 ? 'application' : 'applications'}
+              {eventCount > applications.length && <> from {eventCount} resubmission events. Each application is listed once.</>}
+            </>}</p>
+            <a href="/staff/applications">Clear filter</a>
+          </div>}
+          {applications === null ? <p>{busy ? 'Loading applications…' : 'Applications are unavailable.'}</p> : applications.length ? applications.map(application => <ApplicationCard key={application.id} application={application} staff={staff} run={run} decide={decide} busy={busy} />) : <div className="empty"><h3>{queueFilter ? 'No applications match this filter' : 'No applications yet'}</h3>{!queueFilter && <p>{staff ? 'Submitted applications will appear here.' : 'Choose a municipal service to start an application.'}</p>}</div>}
         </section>}
       </>}
     </main>

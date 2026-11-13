@@ -1,4 +1,5 @@
 import { reportTimezone } from '../report-dates.js'
+import { manualReviewSql } from './application-filters.js'
 
 export async function loadStaffDashboard(pool) {
   const { rows: [row] } = await pool.query(`
@@ -12,14 +13,8 @@ export async function loadStaffDashboard(pool) {
       SELECT status, count(*) AS count FROM applications GROUP BY status
     ), pending AS (
       SELECT id, title, service, created_at,
-             ai_error IS NOT NULL AND ai_error <> '' OR CASE
-               WHEN jsonb_typeof(findings) = 'array' THEN jsonb_array_length(findings) = 0 OR EXISTS (
-                 SELECT 1 FROM jsonb_array_elements(findings) finding
-                 WHERE finding->>'status' IS DISTINCT FROM 'present'
-               )
-               ELSE true
-             END AS manual
-      FROM applications WHERE status = 'submitted'
+             ${manualReviewSql} AS manual
+      FROM applications a WHERE status = 'submitted'
     ), ranked AS (
       SELECT *, row_number() OVER (PARTITION BY manual ORDER BY created_at, id) AS position
       FROM pending

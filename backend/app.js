@@ -11,6 +11,7 @@ import { amount } from './payment.js'
 import { decisionAllowed } from './workflow.js'
 import { needsManualReview } from '../review-findings.js'
 import { loadStaffDashboard } from './staff-dashboard.js'
+import { applicationListFilter } from './application-filters.js'
 import { recordStaffNotification, registerStaffNotifications } from './staff-notifications.js'
 import { reportRange } from '../report-dates.js'
 import { loadReport, reportPdf } from './reports.js'
@@ -116,13 +117,20 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
 
   api.get('/applications', async (req, res) => {
     role(req)
+    const filtered = req.query.filter !== undefined || req.query.date !== undefined
+    if (filtered) role(req, 'staff')
+    const values = [req.user.role === 'resident' ? req.user.id : null]
+    const filter = filtered ? applicationListFilter(req.query, values, fail) : {}
     const { rows } = await pool.query(
       `SELECT a.id, a.title, a.service, a.address, a.purpose, a.vehicle_identifier, a.status, a.revision, a.findings, a.ai_error, a.decision_note, a.created_at,
               p.payer, p.tx_hash, CASE WHEN a.status = 'paid' THEN p.reference_id END AS receipt_ref,
               ARRAY(SELECT d.requirement FROM documents d WHERE d.application_id = a.id AND d.revision = a.revision) AS uploaded_documents
+              ${filter.select ?? ''}
          FROM applications a LEFT JOIN payments p ON p.application_id = a.id
-        WHERE ($1::integer IS NULL OR a.resident_id = $1) ORDER BY a.created_at DESC`,
-      [req.user.role === 'resident' ? req.user.id : null])
+         ${filter.join ?? ''}
+        WHERE ($1::integer IS NULL OR a.resident_id = $1)
+          ${filtered ? 'AND ' + filter.predicate : ''}
+        ORDER BY ${filtered ? 'a.created_at ASC, a.id ASC' : 'a.created_at DESC'}`, values)
     res.json({ applications: rows })
   })
 

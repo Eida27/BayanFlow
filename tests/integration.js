@@ -99,6 +99,9 @@ test('municipal applications from submission through retried receipt confirmatio
   const dashboard = await request('/staff/dashboard', { cookie: staff })
   assert.equal(dashboard.status, 200)
   const baseline = await dashboard.json()
+  assert.equal((await request('/applications?filter=submitted', { cookie: resident })).status, 403)
+  assert.equal((await request('/applications?filter=unknown', { cookie: staff })).status, 400)
+  assert.equal((await request('/applications?filter=new-today&date=2021-02-29', { cookie: staff })).status, 400)
   await db.query(`
     UPDATE applications SET created_at =
       ((statement_timestamp() AT TIME ZONE 'Asia/Manila')::date::timestamp AT TIME ZONE 'Asia/Manila') - interval '1 second'
@@ -410,8 +413,26 @@ test('municipal applications from submission through retried receipt confirmatio
     await db.query(`
       INSERT INTO staff_notifications (application_id, kind, revision, title, service, manual_review, created_at)
       VALUES ($1, 'resubmission', 2, 'Private fixture name', 'business_permit', false, '2020-12-31T16:00:00Z'),
-             ($1, 'resubmission', 3, 'Private fixture name', 'business_permit', false, '2021-01-01T16:00:00Z')
+             ($1, 'resubmission', 3, 'Private fixture name', 'business_permit', false, '2021-01-01T15:59:59Z'),
+             ($1, 'resubmission', 4, 'Private fixture name', 'business_permit', false, '2021-01-01T16:00:00Z')
     `, [ids[0]])
+    const queue = async filter => {
+      const response = await request('/applications?filter=' + filter, { cookie: staff })
+      assert.equal(response.status, 200)
+      return (await response.json()).applications
+    }
+    assert.deepEqual((await queue('new-today&date=2021-01-01')).map(({ id }) => id), [ids[1], ids[2]])
+    assert.deepEqual((await queue('resubmissions&date=2021-01-01')).map(({ id, event_count }) => [id, event_count]), [[ids[0], 2]])
+    const summary = await (await request('/staff/dashboard', { cookie: staff })).json()
+    const pending = (await queue('submitted')).map(({ id }) => id)
+    const manual = (await queue('manual-review')).map(({ id }) => id)
+    const awaiting = (await queue('awaiting-approval')).map(({ id }) => id)
+    assert.equal(pending.length, summary.counts.submitted)
+    assert.deepEqual(new Set(pending), new Set([...manual, ...awaiting]))
+    assert.equal(manual.length + awaiting.length, pending.length)
+    assert.deepEqual(manual.slice(0, 5), summary.manualReview.items.map(({ id }) => id))
+    assert.deepEqual(awaiting.slice(0, 5), summary.awaitingApproval.items.map(({ id }) => id))
+    assert.ok((await queue('paid')).some(({ id, receipt_ref }) => id === tricycleId && receipt_ref === tricyclePayment.referenceId))
     const reports = '/staff/reports'
     for (const path of [reports, reports + '/pdf']) {
       assert.equal((await request(path + query)).status, 401)
@@ -422,10 +443,10 @@ test('municipal applications from submission through retried receipt confirmatio
     assert.equal(response.status, 200, await response.clone().text())
     const report = await response.json()
     assert.equal(report.submitted, 2)
-    assert.equal(report.resubmitted, 1)
-    assert.deepEqual(report.trend, [{ period: '2021-01-01', count: 2, resubmitted: 1 }])
+    assert.equal(report.resubmitted, 2)
+    assert.deepEqual(report.trend, [{ period: '2021-01-01', count: 2, resubmitted: 2 }])
     assert.deepEqual(report.services.map(({ count }) => count), [1, 0, 1, 0])
-    assert.deepEqual(report.services.map(({ resubmitted }) => resubmitted), [1, 0, 0, 0])
+    assert.deepEqual(report.services.map(({ resubmitted }) => resubmitted), [2, 0, 0, 0])
     assert.equal(report.firstDecisions, 2)
     assert.equal(report.medianSeconds, 1800)
     assert.equal(report.confirmedPayments, 2)
@@ -435,7 +456,7 @@ test('municipal applications from submission through retried receipt confirmatio
     assert.equal(pdf.status, 200)
     assert.match(pdf.headers.get('content-disposition'), /bayanflow-report-2021-01-01-2021-01-01\.pdf/)
     const pdfText = await extractText(Buffer.from(await pdf.arrayBuffer()))
-    for (const expected of ['2021-01-01', 'New applications: 2', 'Resubmissions: 1', 'Business Permit: 1 new, 1 resubmitted',
+    for (const expected of ['2021-01-01', 'New applications: 2', 'Resubmissions: 2', 'Business Permit: 1 new, 2 resubmitted',
       'Median time to first decision: 30 min', 'Confirmed testnet payments: 2', '30.000000000000000003 BSC Testnet BNB']) {
       assert.ok(pdfText.includes(expected), expected)
     }
