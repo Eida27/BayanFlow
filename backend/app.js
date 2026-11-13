@@ -4,15 +4,17 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { getAddress, isAddress } from 'viem'
 import { digest, passwordMatches } from './auth.js'
 import { transaction } from './database.js'
-import { checklist, reviewDocuments } from './review.js'
+import { checklist, clearanceChecklist, reviewDocuments } from './review.js'
+import { clearanceCertificate } from './certificate.js'
+import { BUSINESS_PERMIT, MAYORS_CLEARANCE, services } from '../services.js'
 import { amount } from './payment.js'
 import { decisionAllowed } from './workflow.js'
 
-const names = checklist.map(item => item.requirement)
+const fileFields = Object.values(services).flatMap(service => service.documents.map(([name]) => ({ name, maxCount: 1 })))
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { files: names.length, fileSize: 5 * 1024 * 1024 + 1, fields: 1, fieldSize: 1024 }
-}).fields(names.map(name => ({ name, maxCount: 1 })))
+  limits: { files: 3, fileSize: 5 * 1024 * 1024 + 1, fields: 4, fieldSize: 4096 }
+}).fields(fileFields)
 const sessionName = 'bayanflow_session'
 const sessionOptions = { httpOnly: true, sameSite: 'strict', path: '/' }
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
@@ -20,6 +22,14 @@ const hex32 = /^0x[0-9a-f]{64}$/i
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status })
+}
+
+function requiredText(value, label, limit) {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  if (!trimmed || trimmed.length > limit || trimmed.includes('\0')) {
+    fail(400, `Enter ${label} of up to ${limit} characters.`)
+  }
+  return trimmed
 }
 
 function role(req, expected) {
@@ -90,7 +100,7 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
   api.get('/applications', async (req, res) => {
     role(req)
     const { rows } = await pool.query(
-      `SELECT a.id, a.title, a.status, a.revision, a.findings, a.ai_error, a.decision_note, a.created_at,
+      `SELECT a.id, a.title, a.service, a.address, a.purpose, a.status, a.revision, a.findings, a.ai_error, a.decision_note, a.created_at,
               p.payer, p.tx_hash, CASE WHEN a.status = 'paid' THEN p.reference_id END AS receipt_ref
          FROM applications a LEFT JOIN payments p ON p.application_id = a.id
         WHERE ($1::integer IS NULL OR a.resident_id = $1) ORDER BY a.created_at DESC`,
@@ -101,41 +111,65 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
   const residentOnly = (req, _res, next) => { role(req, 'resident'); next() }
 
   async function submit(req, res) {
-    const revision = Boolean(req.params.id)
-    if (revision && (await ownedApplication(pool, req)).status !== 'needs_correction') {
+    const previous = req.params.id ? await ownedApplication(pool, req) : null
+    if (previous && previous.status !== 'needs_correction') {
       fail(409, 'This application is not open for corrections.')
     }
-    const title = typeof req.body.title === 'string' ? req.body.title.trim() : ''
-    if (!title || title.length > 120) fail(400, 'Enter a business name of up to 120 characters.')
+    const body = req.body ?? {}
+    const service = previous?.service ?? body.service ?? BUSINESS_PERMIT
+    if (typeof service !== 'string' || !Object.hasOwn(services, service) ||
+        (previous && body.service !== undefined && body.service !== service)) fail(400, 'Choose a valid municipal service.')
+    const clearance = service === MAYORS_CLEARANCE
+    const title = requiredText(body.title, clearance ? 'a full name' : 'a business name', 120)
+    const address = clearance ? requiredText(body.address, 'an address', 240) : null
+    const purpose = clearance ? requiredText(body.purpose, 'a purpose', 500) : null
+    const requirements = clearance ? clearanceChecklist : checklist
+    const names = requirements.map(item => item.requirement)
     const files = Object.fromEntries(names.map(name => [name, req.files?.[name]?.[0]]))
-    if (Object.values(files).some(file => !file?.buffer.subarray(0, 5).equals(Buffer.from('%PDF-')))) {
+    if (Object.keys(req.files ?? {}).length !== names.length ||
+        Object.values(files).some(file => !file?.buffer.subarray(0, 5).equals(Buffer.from('%PDF-')))) {
       fail(400, 'Attach a PDF for each fictional requirement.')
     }
-    const result = await review(files, env)
-    const id = revision ? req.params.id : randomUUID()
+    const result = await review(files, env, { requirements, applicant: clearance ? { name: title, purpose } : undefined })
+    const id = previous?.id ?? randomUUID()
     await transaction(pool, async db => {
       let number = 1
-      if (revision) {
+      if (previous) {
         const current = await ownedApplication(db, req, true)
-        if (current.status !== 'needs_correction') fail(409, 'This application is not open for corrections.')
+        if (current.status !== 'needs_correction' || current.revision !== previous.revision) {
+          fail(409, 'This application is no longer open for these corrections.')
+        }
         number = current.revision + 1
         await db.query(
           `UPDATE applications SET title=$2, status='submitted', revision=$3, findings=$4, ai_error=$5,
-           decision_note=NULL WHERE id=$1`, [id, title, number, JSON.stringify(result.findings), result.error])
+           decision_note=NULL, address=$6, purpose=$7 WHERE id=$1`,
+          [id, title, number, JSON.stringify(result.findings), result.error, address, purpose])
       } else {
         await db.query(
-          `INSERT INTO applications (id,resident_id,title,status,findings,ai_error) VALUES ($1,$2,$3,'submitted',$4,$5)`,
-          [id, req.user.id, title, JSON.stringify(result.findings), result.error])
+          `INSERT INTO applications (id,resident_id,title,status,findings,ai_error,service,address,purpose)
+           VALUES ($1,$2,$3,'submitted',$4,$5,$6,$7,$8)`,
+          [id, req.user.id, title, JSON.stringify(result.findings), result.error, service, address, purpose])
       }
       for (const name of names) {
         await db.query('INSERT INTO documents VALUES ($1,$2,$3,$4)', [id, number, name, files[name].buffer])
       }
     })
-    res.status(revision ? 200 : 201).json({ id })
+    res.status(previous ? 200 : 201).json({ id })
   }
 
   api.post('/applications', residentOnly, upload, submit)
   api.post('/applications/:id/revision', residentOnly, upload, submit)
+  api.get('/applications/:id/certificate', async (req, res) => {
+    role(req, 'resident')
+    const application = await ownedApplication(pool, req)
+    if (application.service !== MAYORS_CLEARANCE || application.status !== 'paid') fail(404, 'Certificate not found.')
+    const { rows: [payment] } = await pool.query(
+      'SELECT confirmed_at FROM payments WHERE application_id=$1 AND tx_hash IS NOT NULL AND confirmed_at IS NOT NULL',
+      [application.id])
+    if (!payment) fail(404, 'Certificate not found.')
+    const pdf = await clearanceCertificate(application, payment)
+    res.attachment('bayanflow-demo-clearance.pdf').send(pdf)
+  })
   api.get('/applications/:id/documents/:requirement', async (req, res) => {
     role(req)
     const application = await ownedApplication(pool, req)

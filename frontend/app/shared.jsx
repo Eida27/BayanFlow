@@ -20,7 +20,7 @@ export function Header({ user, signOut, busy }) {
 }
 
 export function Footer() {
-  return <footer className="shell footer"><strong>BayanFlow</strong><span>Fictional permit service · BNB Smart Chain Testnet</span></footer>
+  return <footer className="shell footer"><strong>BayanFlow</strong><span>Fictional municipal services · BNB Smart Chain Testnet</span></footer>
 }
 
 export const explorer = 'https://testnet.bscscan.com/tx/'

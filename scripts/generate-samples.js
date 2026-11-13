@@ -4,7 +4,8 @@ const samples = {
   'business-profile': ['Business profile', 'Business name: Paper Lantern Stationery', 'Activity: Stationery retail', 'Applicant: Alex Sample'],
   'premises-declaration': ['Premises-use declaration', 'Site: 10 Example Lane, Demo Town', 'Intended use: Stationery retail'],
   'incomplete-premises-declaration': ['Premises-use declaration', 'Site: 10 Example Lane, Demo Town'],
-  'owner-authorization': ['Owner authorization', 'Casey Sample authorizes Paper Lantern Stationery', 'to use 10 Example Lane, Demo Town.']
+  'owner-authorization': ['Owner authorization', 'Casey Sample authorizes Paper Lantern Stationery', 'to use 10 Example Lane, Demo Town.'],
+  'clearance-supporting': ['Volunteer application acknowledgment', 'Applicant: Alex Sample', 'Address: 10 Example Lane, Demo Town', 'Purpose: Volunteer application for the Demo Town Reading Program', 'The program requests a municipal clearance from the applicant.']
 }
 
 const folder = new URL('../frontend/public/samples/', import.meta.url)

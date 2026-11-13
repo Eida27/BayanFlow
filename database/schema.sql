@@ -46,3 +46,21 @@ CREATE TABLE IF NOT EXISTS payments (
   tx_hash text UNIQUE,
   confirmed_at timestamptz
 );
+
+ALTER TABLE applications
+  ADD COLUMN IF NOT EXISTS service text NOT NULL DEFAULT 'business_permit'
+    CHECK (service IN ('business_permit', 'mayors_clearance')),
+  ADD COLUMN IF NOT EXISTS address text,
+  ADD COLUMN IF NOT EXISTS purpose text;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'documents'::regclass AND conname = 'documents_service_requirement_check'
+  ) THEN
+    ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_requirement_check;
+    ALTER TABLE documents ADD CONSTRAINT documents_service_requirement_check
+      CHECK (requirement IN ('profile', 'premises', 'authorization', 'supporting'));
+  END IF;
+END $$;

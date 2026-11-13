@@ -1,6 +1,6 @@
 # BayanFlow
 
-BayanFlow is a hackathon prototype for a fictional municipal Business Permit Request. Residents submit sample PDFs, receive an AI completeness check, correct their submission after staff feedback, and pay a simulated 0.001 tBNB fee on BSC Testnet. The receipt links to the public transaction.
+BayanFlow is a hackathon prototype for fictional municipal services. Residents can request a Business Permit or Mayor’s Clearance / Certification, submit sample PDFs, receive an AI completeness check, and correct their submission after staff feedback. Approved applications use a simulated 0.001 tBNB fee on BSC Testnet. The public receipt links to the transaction, and a paid clearance request includes a private demo certificate.
 
 ## Project layout
 
@@ -32,6 +32,16 @@ Use separate browser profiles for resident and staff. Only upload fictional mate
 Follow the [contract setup and verification guide](contracts/README.md). Set `PAYMENT_CONTRACT_ADDRESS` and `PAYMENT_SIGNER_PRIVATE_KEY` in the root `.env` and restart the API. Use the key for the contract's configured **authorization signer**, ideally separate from the deployer and demo treasury. Configure MetaMask for chain 97 and fund the resident demo wallet with enough testnet tBNB for the fee and gas. The first payment authorization binds the application to that wallet. Authorization can be renewed for the same wallet.
 
 ## Rehearse the demo
+
+### Mayor’s Clearance / Certification
+
+1. As the resident, open **New application** and choose **Mayor’s Clearance / Certification**. Enter **Alex Sample**, **10 Example Lane, Demo Town**, and **Volunteer application for the Demo Town Reading Program**. Download and attach the supporting sample PDF.
+2. In a separate browser profile, sign in as staff. Open the request in the shared queue, review the supporting PDF and any advisory findings, and approve it with a note.
+3. Return to the resident account, refresh, and pay with the funded BSC Testnet wallet configured above. Once payment is verified, open the public receipt and download the demo clearance PDF from the application.
+
+Run `pnpm db:setup` after updating an existing BayanFlow checkout to add the new service fields and document type. The setup preserves existing applications and receipts.
+
+### Business Permit
 
 1. Sign in as the resident and submit **Paper Lantern Stationery** with the incomplete premises declaration and the other two sample PDFs.
 2. Show the AI finding for the missing intended use. As staff, open the submission, review the PDF, and request a correction.

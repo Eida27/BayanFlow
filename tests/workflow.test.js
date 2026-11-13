@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
-import { checklist, extractText, validateFindings } from '../backend/review.js'
+import { checklist, clearanceChecklist, extractText, reviewDocuments, validateFindings } from '../backend/review.js'
 import { decisionAllowed } from '../backend/workflow.js'
 
 test('staff can decide only a submitted application', () => {
@@ -29,4 +29,23 @@ test('bundled PDFs distinguish complete and incomplete premises declarations', a
   assert.match(await sample('premises-declaration'), /Intended use: Stationery retail/)
   assert.doesNotMatch(await sample('incomplete-premises-declaration'), /Intended use:/)
   await assert.rejects(extractText(Buffer.from('not a pdf')))
+})
+test('clearance findings require an excerpt from the supporting PDF', () => {
+  const finding = { requirement: 'supporting', status: 'present', explanation: 'The PDF supports the stated purpose.', excerpt: 'Alex Sample' }
+  assert.deepEqual(validateFindings([finding], { supporting: 'Applicant: Alex Sample' }, clearanceChecklist), [finding])
+  assert.throws(() => validateFindings([{ ...finding, excerpt: 'Someone else' }], { supporting: 'Applicant: Alex Sample' }, clearanceChecklist))
+})
+
+test('clearance review sends applicant context and returns grounded findings', async t => {
+  const applicant = { name: 'Alex Sample', purpose: 'Volunteer application for the Demo Town Reading Program' }
+  const buffer = await readFile(new URL('../frontend/public/samples/clearance-supporting.pdf', import.meta.url))
+  const finding = { requirement: 'supporting', status: 'present', explanation: 'The acknowledgment names the applicant and program.', excerpt: applicant.purpose }
+  const mock = t.mock.method(globalThis, 'fetch', async () => Response.json({
+    choices: [{ message: { content: JSON.stringify({ findings: [finding] }) } }]
+  }))
+  const result = await reviewDocuments({ supporting: { buffer } }, { OPENAI_API_KEY: 'test' },
+    { requirements: clearanceChecklist, applicant })
+  assert.deepEqual(result, { findings: [finding], error: null })
+  const [, options] = mock.mock.calls[0].arguments
+  assert.deepEqual(JSON.parse(JSON.parse(options.body).messages[1].content).applicant, applicant)
 })

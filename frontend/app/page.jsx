@@ -4,12 +4,8 @@ import { useEffect, useState } from 'react'
 import { createPublicClient, createWalletClient, custom, http } from 'viem'
 import { bscTestnet } from 'viem/chains'
 import { api, Header, Footer, explorer } from './shared'
+import { BUSINESS_PERMIT, MAYORS_CLEARANCE, services } from '../../services.js'
 
-const documents = [
-  ['profile', 'Business profile', 'business-profile.pdf'],
-  ['premises', 'Premises declaration', 'premises-declaration.pdf'],
-  ['authorization', 'Owner authorization', 'owner-authorization.pdf'],
-]
 const statuses = {
   submitted: 'Under review',
   needs_correction: 'Corrections requested',
@@ -32,9 +28,9 @@ function SignIn({ signIn, busy }) {
   const [role, setRole] = useState('resident')
   return <div className="login-grid">
     <section className="intro">
-      <span className="kicker"><i /> BUSINESS PERMIT SERVICES</span>
-      <h1>Your business<br />starts here<span>.</span></h1>
-      <p>Submit your permit documents, track your review, and verify your testnet payment in one place.</p>
+      <span className="kicker"><i /> MUNICIPAL SERVICES</span>
+      <h1>Municipal services<br />in one place<span>.</span></h1>
+      <p>Apply for a business permit or Mayor’s Clearance, track your review, and verify your testnet payment.</p>
       <ol className="journey">
         <li><b>01</b><span>Submit</span></li>
         <li><b>02</b><span>Review</span></li>
@@ -43,9 +39,9 @@ function SignIn({ signIn, busy }) {
     </section>
     <section className="panel login-panel">
       <h2>Sign in to BayanFlow</h2>
-      <p>Choose a demo account to explore the permit workflow.</p>
+      <p>Choose a demo account to try the application workflow.</p>
       <div className="role-toggle" aria-label="Demo account">
-        {['resident', 'staff'].map(value => <button type="button" key={value} aria-pressed={role === value} onClick={() => setRole(value)}>{value === 'resident' ? 'Resident' : 'Permit staff'}</button>)}
+        {['resident', 'staff'].map(value => <button type="button" key={value} aria-pressed={role === value} onClick={() => setRole(value)}>{value === 'resident' ? 'Resident' : 'Municipal staff'}</button>)}
       </div>
       <form key={role} className="stack" onSubmit={event => {
         event.preventDefault()
@@ -61,23 +57,39 @@ function SignIn({ signIn, busy }) {
   </div>
 }
 
-function ApplicationForm({ application, submit, busy }) {
+function ApplicationForm({ application, service = application?.service ?? BUSINESS_PERMIT, submit, busy }) {
+  const clearance = service === MAYORS_CLEARANCE
+  const { documents } = services[service]
   return <form className="stack" onSubmit={event => {
     event.preventDefault()
     submit(new FormData(event.currentTarget))
   }}>
-    <label>Business name<input name="title" required maxLength={120} defaultValue={application?.title ?? ''} /></label>
+    <input type="hidden" name="service" value={service} />
+    <label>{clearance ? 'Full name' : 'Business name'}<input name="title" required maxLength={120} defaultValue={application?.title ?? ''} /></label>
+    {clearance && <>
+      <label>Address<textarea name="address" rows="2" required maxLength={240} defaultValue={application?.address ?? ''} /></label>
+      <label>Purpose of request<textarea name="purpose" rows="3" required maxLength={500} defaultValue={application?.purpose ?? ''} /></label>
+    </>}
     {documents.map(([name, label, sample]) => <div className="upload" key={name}>
       <label>{label}<input name={name} type="file" accept=".pdf,application/pdf" required /></label>
       <a href={'/samples/' + sample} download>Download sample</a>
     </div>)}
-    <a href="/samples/incomplete-premises-declaration.pdf" download>Download incomplete premises sample</a>
-    <button className="button primary" disabled={busy}>{application ? 'Resubmit documents' : 'Submit application'}</button>
+    {!clearance && <a href="/samples/incomplete-premises-declaration.pdf" download>Download incomplete premises sample</a>}
+    <button className="button primary" disabled={busy}>{application ? 'Resubmit application' : 'Submit application'}</button>
   </form>
 }
 
 function Details({ application, staff, run, busy, setPending, pending }) {
   const base = '/applications/' + application.id
+  const clearance = application.service === MAYORS_CLEARANCE
+  const { documents } = services[application.service ?? BUSINESS_PERMIT]
+  const [paymentError, setPaymentError] = useState('')
+  const paymentWarning = paymentError || (!application.payer && 'Authorize a wallet before confirming payment.')
+
+  function runPayment(action) {
+    setPaymentError('')
+    return run(action, true, setPaymentError)
+  }
 
   async function verifyPayment(hash) {
     try {
@@ -95,7 +107,7 @@ function Details({ application, staff, run, busy, setPending, pending }) {
   }
 
   function pay() {
-    run(async () => {
+    runPayment(async () => {
       if (!window.ethereum) throw new Error('Install or enable an Ethereum-compatible wallet to pay.')
       const wallet = createWalletClient({ chain: bscTestnet, transport: custom(window.ethereum) })
       const [payer] = await wallet.requestAddresses()
@@ -123,6 +135,10 @@ function Details({ application, staff, run, busy, setPending, pending }) {
   }
 
   return <div className="details stack">
+    {clearance && <div className="applicant-details">
+      <p><strong>Address</strong> {application.address}</p>
+      <p><strong>Purpose</strong> {application.purpose}</p>
+    </div>}
     <div className="document-links">{documents.map(([name, label]) => <a key={name} href={`/api${base}/documents/${name}?revision=${application.revision}`} target="_blank" rel="noreferrer">{label} ↗</a>)}</div>
     {(application.findings?.length > 0 || application.ai_error) && <section className="findings">
       <h4>AI document review</h4>
@@ -145,7 +161,7 @@ function Details({ application, staff, run, busy, setPending, pending }) {
       <label>Decision note<textarea name="note" rows="3" required maxLength={1000} /></label>
       <button className="button primary" disabled={busy}>Save decision</button>
     </form>}
-    {!staff && application.status === 'needs_correction' && <ApplicationForm application={application} busy={busy} submit={data => run(() => api(base + '/revision', data))} />}
+    {!staff && application.status === 'needs_correction' && <ApplicationForm key={application.revision} application={application} busy={busy} submit={data => run(() => api(base + '/revision', data))} />}
     {!staff && application.status === 'approved' && <section className="stack">
       <h4>Testnet payment</h4>
       <p>Use an Ethereum-compatible wallet on BNB Smart Chain Testnet. Your wallet displays the test BNB amount before you approve the transaction.</p>
@@ -153,12 +169,17 @@ function Details({ application, staff, run, busy, setPending, pending }) {
       {pending && <p>Verify the saved transaction first. If your wallet shows it was dropped or cancelled, you can retry payment.</p>}
       <div className="document-links">
         <button className={pending ? 'button secondary' : 'button primary'} onClick={pay} disabled={busy}>{pending ? 'Retry payment' : 'Pay with wallet'}</button>
-        <button className="button secondary" disabled={busy} onClick={() => run(() => verifyPayment(pending))}>Verify payment</button>
+        <button className="button secondary" disabled={busy} onClick={() => runPayment(() => verifyPayment(pending))}>Verify payment</button>
+        {paymentWarning && <span className="payment-warning" role="status">
+          <span className="payment-warning-icon" aria-hidden="true">!</span>
+          {paymentWarning}
+        </span>}
         {pending && <a href={explorer + pending} target="_blank" rel="noreferrer">View transaction ↗</a>}
       </div>
-      {pending && <button className="button secondary" disabled={busy} onClick={() => run(() => verifyPayment())}>Search for a matching payment</button>}
+      {pending && <button className="button secondary" disabled={busy} onClick={() => runPayment(() => verifyPayment())}>Search for a matching payment</button>}
     </section>}
     {application.status === 'paid' && <div className="document-links">
+      {!staff && clearance && <a href={`/api${base}/certificate`} download>Download demo clearance PDF</a>}
       {application.receipt_ref && <a href={'/receipts/' + application.receipt_ref}>Open public receipt ↗</a>}
       {application.tx_hash && <a href={explorer + application.tx_hash} target="_blank" rel="noreferrer">View on BscScan ↗</a>}
     </div>}
@@ -172,7 +193,7 @@ function ApplicationCard({ application, ...props }) {
     setPending(hash ?? '')
   }, [application.id])
   return <details className="application">
-    <summary><div><h3>{application.title}</h3><small>{application.created_at && new Date(application.created_at).toLocaleDateString('en-PH', { dateStyle: 'medium' })}</small></div><span className={`status ${application.status}`}>{statuses[application.status]}</span></summary>
+    <summary><div><h3>{application.title}</h3><small>{services[application.service ?? BUSINESS_PERMIT].label}{application.created_at && ` · ${new Date(application.created_at).toLocaleDateString('en-PH', { dateStyle: 'medium' })}`}</small></div><span className={`status ${application.status}`}>{statuses[application.status]}</span></summary>
     <Details application={application} pending={pending} setPending={setPending} {...props} />
   </details>
 }
@@ -184,6 +205,7 @@ export default function Home() {
   const [error, setError] = useState('')
   const [applications, setApplications] = useState([])
   const [showForm, setShowForm] = useState(false)
+  const [service, setService] = useState(BUSINESS_PERMIT)
 
   async function refresh() {
     setApplications((await api('/applications')).applications)
@@ -196,14 +218,14 @@ export default function Home() {
     }).catch(error => setError(error.message)).finally(() => setLoading(false))
   }, [])
 
-  async function run(action, refreshAfter = true) {
+  async function run(action, refreshAfter = true, reportError = setError) {
     setBusy(true)
     setError('')
     try {
       await action()
       if (refreshAfter) await refresh()
     } catch (error) {
-      setError(error.shortMessage || error.message)
+      reportError(error.shortMessage || error.message)
     } finally {
       setBusy(false)
     }
@@ -216,6 +238,7 @@ export default function Home() {
       setUser(null)
       setApplications([])
       setShowForm(false)
+      setService(BUSINESS_PERMIT)
     }, false)} />
     <main className="shell main">
       {error && <p className="error" role="alert">{error}</p>}
@@ -225,22 +248,24 @@ export default function Home() {
         setUser((await api('/me')).user)
       })} /> : <>
         <section className="workspace-hero">
-          <div><span className="kicker"><i /> {staff ? 'PERMIT STAFF PORTAL' : 'RESIDENT PORTAL'}</span>
-          <h1>{staff ? 'Permit review' : 'Business permits'}<span>.</span></h1>
-          <p>{staff ? 'Review submitted documents and record permit decisions.' : 'Submit documents and follow your applications through review and payment.'}</p></div>
+          <div><span className="kicker"><i /> {staff ? 'MUNICIPAL STAFF PORTAL' : 'RESIDENT PORTAL'}</span>
+          <h1>{staff ? 'Application review' : 'Municipal services'}<span>.</span></h1>
+          <p>{staff ? 'Review submitted documents and record application decisions.' : 'Submit documents and follow your applications through review and payment.'}</p></div>
           {!staff && <button className="button primary" aria-expanded={showForm} onClick={() => setShowForm(!showForm)} disabled={busy}>{showForm ? 'Close form' : '+ New application'}</button>}
         </section>
-        {showForm && !staff && <section className="panel form-panel">
-          <h2>New business permit</h2>
-          <p>Upload three fictional sample PDFs.</p>
-          <ApplicationForm busy={busy} submit={data => run(async () => {
+        {showForm && !staff && <section className="panel form-panel stack">
+          <h2>New application</h2>
+          <label>Municipal service<select value={service} disabled={busy} onChange={event => setService(event.target.value)}>
+            {Object.entries(services).map(([id, { label }]) => <option key={id} value={id}>{label}</option>)}
+          </select></label>
+          <ApplicationForm key={service} service={service} busy={busy} submit={data => run(async () => {
             await api('/applications', data)
             setShowForm(false)
           })} />
         </section>}
         <section className="panel list-panel">
           <div className="section-title"><h2>{staff ? 'Application queue' : 'Your applications'}</h2><button className="button secondary" disabled={busy} onClick={() => run(refresh, false)}>Refresh</button></div>
-          {applications.length ? applications.map(application => <ApplicationCard key={application.id} application={application} staff={staff} run={run} busy={busy} />) : <div className="empty"><h3>No applications yet</h3><p>{staff ? 'Submitted applications will appear here.' : 'Start a new application when you have your three sample PDFs.'}</p></div>}
+          {applications.length ? applications.map(application => <ApplicationCard key={application.id} application={application} staff={staff} run={run} busy={busy} />) : <div className="empty"><h3>No applications yet</h3><p>{staff ? 'Submitted applications will appear here.' : 'Choose a municipal service to start an application.'}</p></div>}
         </section>
       </>}
     </main>
