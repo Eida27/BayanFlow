@@ -1,3 +1,5 @@
+import { needsManualReview } from '../../review-findings.js'
+
 export const dashboardStatuses = {
   submitted: 'Submitted',
   needs_correction: 'Needs Correction',
@@ -15,8 +17,7 @@ export function summarizeApplications(applications) {
     counts[application.status] += 1
     if (application.status !== 'submitted') continue
 
-    const { findings, ai_error } = application
-    if (ai_error || !Array.isArray(findings) || !findings.length || findings.some(finding => finding?.status !== 'present')) {
+    if (needsManualReview(application)) {
       manualReview.push(application)
     } else {
       awaitingApproval.push(application)

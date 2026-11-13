@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createApp } from '../backend/app.js'
 import { createPool } from '../backend/database.js'
-import { extractText } from '../backend/review.js'
+import { extractText, reviewDocuments } from '../backend/review.js'
 
 test('municipal applications from submission through retried receipt confirmation', async t => {
   assert.ok(process.env.TEST_DATABASE_URL, 'Set TEST_DATABASE_URL to a disposable PostgreSQL database')
@@ -49,7 +49,10 @@ test('municipal applications from submission through retried receipt confirmatio
   const payer = `0x${'11'.repeat(20)}`
   const contract = `0x${'22'.repeat(20)}`
   let verifications = 0
-  const app = createApp({ pool: db, env: {}, gateway: {
+  let reviewSucceeds = false
+  const app = createApp({ pool: db, env: {}, review: (files, env, options) => reviewSucceeds
+    ? { findings: options.requirements.map(({ requirement }) => ({ requirement, status: 'present' })), error: null }
+    : reviewDocuments(files, env, options), gateway: {
     contract,
     currentBlock: async () => 1n,
     authorize: async payment => ({ referenceId: payment.reference_id }),
@@ -91,6 +94,10 @@ test('municipal applications from submission through retried receipt confirmatio
   }
 
   const [resident, staff, other] = await Promise.all(['resident', 'staff', 'other'].map(login))
+  assert.equal((await request('/staff/notifications')).status, 401)
+  assert.equal((await request('/staff/notifications', { cookie: resident })).status, 403)
+  assert.deepEqual(await (await request('/staff/notifications', { cookie: staff })).json(),
+    { items: [], nextCursor: null, unreadCount: 0 })
   assert.equal((await request(`/applications/${legacyId}/documents/profile`, { cookie: resident })).status, 200)
   assert.equal((await request(`/applications/${legacyClearanceId}/documents/supporting`, { cookie: other })).status, 200)
   assert.equal((await (await request('/receipts/' + legacyReference)).json()).hash, legacyHash)
@@ -269,7 +276,9 @@ test('municipal applications from submission through retried receipt confirmatio
   const tricyclePath = applicationsPath + '/' + tricycleId
   assert.equal((await review(tricyclePath, 'needs_correction', 1)).status, 200)
   const fixed = tricycleForm('DEMO-TRI-042', true, vehiclePdf)
+  reviewSucceeds = true
   assert.equal((await request(tricyclePath + '/revision', { cookie: resident, body: fixed })).status, 200)
+  reviewSucceeds = false
   const oldVehicle = await request(tricyclePath + '/documents/tricycle_vehicle?revision=1', { cookie: staff })
   assert.equal(oldVehicle.status, 200)
   assert.match(await oldVehicle.text(), /DEMO-TRI-099/)
@@ -282,6 +291,56 @@ test('municipal applications from submission through retried receipt confirmatio
   assert.equal(paidTricycle.status, 200)
   const tricyclePayment = await paidTricycle.json()
   assert.deepEqual(await (await confirmTricycle()).json(), tricyclePayment)
+  await t.test('staff notification read state, preferences and pagination are account scoped', async () => {
+    const { hashPassword } = await import('../backend/auth.js')
+    await db.query("INSERT INTO accounts (email,password_hash,role) VALUES ('second-staff',$1,'staff')", [hashPassword('demo')])
+    const second = await login('second-staff')
+    const path = '/staff/notifications'
+    const preferencesPath = '/staff/preferences'
+    const feed = async (cookie = staff, query = '') => (await request(path + query, { cookie })).json()
+    const post = async (url, body, cookie = staff) => request(url, { cookie, body })
+    assert.equal((await request(preferencesPath, { cookie: resident })).status, 403)
+    assert.equal((await post(path + '/read-all', { through: '1' }, resident)).status, 403)
+    const initial = await feed()
+    const tricycleEvents = initial.items.filter(item => item.application_id === tricycleId)
+    assert.deepEqual(tricycleEvents.map(({ kind, manual_review }) => [kind, manual_review]),
+      [['payment', false], ['resubmission', false], ['submission', true]])
+    await db.query("ALTER TABLE staff_notifications ADD CHECK (title <> 'Rollback fixture')")
+    const rejected = tricycleForm('DEMO-TRI-042', true, vehiclePdf)
+    rejected.set('title', 'Rollback fixture')
+    assert.equal((await submitZoning(rejected)).status, 500)
+    assert.equal((await db.query("SELECT id FROM applications WHERE title = 'Rollback fixture'")).rowCount, 0)
+    assert.deepEqual(await feed(), initial)
+    const payment = tricycleEvents[0]
+    assert.equal((await post(path + '/' + payment.id + '/read', {})).status, 200)
+    assert.equal((await feed()).items.find(item => item.id === payment.id).read, true)
+    assert.equal((await feed(second)).items.find(item => item.id === payment.id).read, false)
+
+    const preferences = { submission: true, resubmission: true, payment: false }
+    const hidden = await (await post(preferencesPath, { preferences })).json()
+    assert.deepEqual(hidden.preferences, preferences)
+    assert.equal((await feed()).items.some(item => item.kind === 'payment'), false)
+    assert.equal((await feed()).unreadCount, hidden.unreadCount)
+    assert.deepEqual((await (await request(preferencesPath, { cookie: second })).json()).preferences,
+      { ...preferences, payment: true })
+    await post(preferencesPath, { preferences: { ...preferences, payment: true } })
+    assert.equal((await feed()).items.find(item => item.id === payment.id).read, true)
+
+    const cutoff = initial.items[0].id
+    await db.query(`
+      INSERT INTO staff_notifications (application_id, kind, revision, title, service, manual_review)
+      SELECT $1, 'resubmission', revision, 'Pagination fixture', 'tricycle_permit', false
+      FROM generate_series(100, 125) revision
+    `, [tricycleId])
+    const marked = await (await post(path + '/read-all', { through: cutoff })).json()
+    assert.equal(marked.unreadCount, 26)
+    const first = await feed()
+    assert.equal(first.items.length, 25)
+    const next = await feed(staff, '?before=' + first.nextCursor)
+    assert.ok(next.items.every(item => BigInt(item.id) < BigInt(first.nextCursor)))
+    assert.equal(next.items.filter(item => !item.read).length, 1)
+    assert.equal((await feed(second)).unreadCount, initial.unreadCount + 26)
+  })
   const permitDownload = await permit(resident)
   assert.equal(permitDownload.status, 200)
   assert.match(permitDownload.headers.get('content-disposition'), /bayanflow-demo-tricycle-permit\.pdf/)

@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPublicClient, createWalletClient, custom, http } from 'viem'
 import { bscTestnet } from 'viem/chains'
 import { api, Header, Footer, explorer } from './shared'
 import StaffDashboard, { applicationAnchor, openLinkedApplication } from './staff-dashboard'
 import StaffReports from './staff-reports'
+import { StaffNotifications, StaffSettings, useNotificationRefresh } from './staff-notifications'
 import { BUSINESS_PERMIT, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../../services.js'
 
 const statuses = {
@@ -235,7 +236,23 @@ export default function Portal({ section = 'dashboard' }) {
   const [applications, setApplications] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [service, setService] = useState(BUSINESS_PERMIT)
+  const [unreadCount, updateUnreadCount] = useState(null)
+  const badgeVersion = useRef(0)
   const staff = user?.role === 'staff'
+  const setUnreadCount = useCallback(count => {
+    badgeVersion.current++
+    updateUnreadCount(count)
+  }, [])
+  const refreshUnread = useCallback(async () => {
+    const version = ++badgeVersion.current
+    try {
+      const result = await api('/staff/notifications/unread')
+      if (version === badgeVersion.current) updateUnreadCount(result.unreadCount)
+    } catch {
+      // The feed shows request errors and offers a retry.
+    }
+  }, [])
+  useNotificationRefresh(staff && section !== 'notifications' ? refreshUnread : null)
   const staffQueueReady = staff && section === 'applications' && !loading && applications !== null
   const sectionInfo = staffSections[section]
 
@@ -284,6 +301,7 @@ export default function Portal({ section = 'dashboard' }) {
     <Header user={user} busy={busy} signOut={() => run(async () => {
       await api('/logout', {})
       setUser(null)
+      setUnreadCount(null)
       setApplications(null)
       setShowForm(false)
       setService(BUSINESS_PERMIT)
@@ -298,7 +316,9 @@ export default function Portal({ section = 'dashboard' }) {
       }, false)} /> : <>
         {staff && <nav className="staff-nav" aria-label="Staff portal">
           {Object.entries(staffSections).map(([id, { href, label }]) =>
-            <a key={id} href={href} aria-current={section === id ? 'page' : undefined}>{label}</a>
+            <a key={id} href={href} aria-current={section === id ? 'page' : undefined}>{label}
+              {id === 'notifications' && unreadCount > 0 && <span className="staff-unread-count" aria-label={`${unreadCount} unread`}>{unreadCount}</span>}
+            </a>
           )}
         </nav>}
         <section className="workspace-hero">
@@ -309,6 +329,8 @@ export default function Portal({ section = 'dashboard' }) {
         </section>
         {staff && section === 'dashboard' && <StaffDashboard applications={applications} loading={busy} busy={busy} refresh={() => run(refresh, false)} />}
         {staff && section === 'reports' && <StaffReports />}
+        {staff && section === 'notifications' && <StaffNotifications setUnreadCount={setUnreadCount} />}
+        {staff && section === 'settings' && <StaffSettings setUnreadCount={setUnreadCount} />}
         {showForm && !staff && <section className="panel form-panel stack">
           <h2>New application</h2>
           <label>Municipal service<select value={service} disabled={busy} onChange={event => setService(event.target.value)}>

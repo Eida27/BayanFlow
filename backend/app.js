@@ -9,6 +9,8 @@ import { clearanceCertificate } from './certificate.js'
 import { BUSINESS_PERMIT, MAYORS_CLEARANCE, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../services.js'
 import { amount } from './payment.js'
 import { decisionAllowed } from './workflow.js'
+import { needsManualReview } from '../review-findings.js'
+import { recordStaffNotification, registerStaffNotifications } from './staff-notifications.js'
 import { reportRange } from '../report-dates.js'
 import { loadReport, reportPdf } from './reports.js'
 
@@ -89,6 +91,7 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
   })
 
   api.get('/me', (req, res) => res.json({ user: req.user ?? null }))
+  registerStaffNotifications(api, pool, role, fail)
   api.post('/login', async (req, res) => {
     const { email, password } = req.body ?? {}
     if (typeof email !== 'string' || email.length > 254 || typeof password !== 'string' || password.length > 128) {
@@ -192,6 +195,10 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
       for (const [name, file] of Object.entries(files)) {
         await db.query('INSERT INTO documents VALUES ($1,$2,$3,$4)', [id, number, name, file.buffer])
       }
+      await recordStaffNotification(db, {
+        id, kind: previous ? 'resubmission' : 'submission', revision: number, title, service,
+        manualReview: needsManualReview({ findings: result.findings, ai_error: result.error }),
+      })
     })
     res.status(previous ? 200 : 201).json({ id })
   }
@@ -292,6 +299,7 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
       if (current.status !== 'approved') fail(409, 'The application is not ready for payment.')
       await db.query('UPDATE payments SET tx_hash=$2, confirmed_at=now() WHERE application_id=$1', [current.id, verifiedHash])
       await db.query("UPDATE applications SET status='paid' WHERE id=$1", [current.id])
+      await recordStaffNotification(db, { ...current, kind: 'payment', revision: 1 })
       return verifiedHash
     })
     res.json({ referenceId: payment.reference_id, hash: storedHash })

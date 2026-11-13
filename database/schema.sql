@@ -47,6 +47,31 @@ CREATE TABLE IF NOT EXISTS payments (
   confirmed_at timestamptz
 );
 
+CREATE TABLE IF NOT EXISTS staff_notifications (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  application_id uuid NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  kind text NOT NULL CHECK (kind IN ('submission', 'resubmission', 'payment')),
+  revision integer NOT NULL,
+  title text NOT NULL,
+  service text NOT NULL,
+  manual_review boolean NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  UNIQUE (application_id, kind, revision)
+);
+
+CREATE TABLE IF NOT EXISTS staff_notification_reads (
+  account_id integer REFERENCES accounts(id) ON DELETE CASCADE,
+  notification_id bigint REFERENCES staff_notifications(id) ON DELETE CASCADE,
+  PRIMARY KEY (account_id, notification_id)
+);
+
+CREATE TABLE IF NOT EXISTS staff_notification_preferences (
+  account_id integer PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  submission boolean NOT NULL DEFAULT true,
+  resubmission boolean NOT NULL DEFAULT true,
+  payment boolean NOT NULL DEFAULT true
+);
+
 ALTER TABLE applications
   ADD COLUMN IF NOT EXISTS service text NOT NULL DEFAULT 'business_permit',
   ADD COLUMN IF NOT EXISTS address text,
