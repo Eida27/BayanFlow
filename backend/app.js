@@ -9,6 +9,8 @@ import { clearanceCertificate } from './certificate.js'
 import { BUSINESS_PERMIT, MAYORS_CLEARANCE, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../services.js'
 import { amount } from './payment.js'
 import { decisionAllowed } from './workflow.js'
+import { reportRange } from '../report-dates.js'
+import { loadReport, reportPdf } from './reports.js'
 
 const fileFields = Object.values(services).flatMap(service => service.documents.map(([name]) => ({ name, maxCount: 1 })))
 const upload = multer({
@@ -121,6 +123,24 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
   })
 
   const residentOnly = (req, _res, next) => { role(req, 'resident'); next() }
+
+  async function staffReport(req) {
+    role(req, 'staff')
+    let range
+    try {
+      range = reportRange(req.query)
+    } catch (error) {
+      fail(400, error.message)
+    }
+    return loadReport(pool, range)
+  }
+
+  api.get('/staff/reports', async (req, res) => res.json(await staffReport(req)))
+  api.get('/staff/reports/pdf', async (req, res) => {
+    const report = await staffReport(req)
+    const pdf = await reportPdf(report)
+    res.attachment(`bayanflow-report-${report.from}-${report.to}.pdf`).send(pdf)
+  })
 
   async function submit(req, res) {
     const previous = req.params.id ? await ownedApplication(pool, req) : null

@@ -292,4 +292,78 @@ test('municipal applications from submission through retried receipt confirmatio
   assert.equal((await permit(staff)).status, 403)
   assert.deepEqual(await (await request('/receipts/' + tricyclePayment.referenceId)).json(),
     { referenceId: tricyclePayment.referenceId, hash: tricycleHash, amount: '1000000000000000', chainId: 97, contract })
+
+  await t.test('staff reports filter each event by Manila date and export the same totals', async () => {
+    const fixtures = [
+      ['2020-12-31T15:59:59Z', 'business_permit'],
+      ['2020-12-31T16:00:00Z', 'zoning_clearance'],
+      ['2021-01-01T15:59:59Z', 'business_permit'],
+      ['2021-01-01T16:00:00Z', 'business_permit'],
+    ]
+    const ids = []
+    for (const [createdAt, service] of fixtures) {
+      const fixtureId = randomUUID()
+      ids.push(fixtureId)
+      await db.query(
+        "INSERT INTO applications (id,resident_id,title,status,created_at,service) SELECT $1,id,'Private fixture name','submitted',$2,$3 FROM accounts WHERE email='resident'",
+        [fixtureId, createdAt, service])
+    }
+    for (const [application, revision, date] of [
+      [ids[0], 1, '2020-12-31T16:59:59Z'],
+      [ids[0], 2, '2020-12-31T17:00:00Z'],
+      [ids[1], 1, '2020-12-31T15:59:59Z'],
+      [ids[1], 2, '2020-12-31T17:00:00Z'],
+      [ids[2], 1, '2021-01-01T15:59:59Z'],
+    ]) {
+      await db.query(
+        "INSERT INTO decisions (application_id,revision,reviewer_id,status,note,decided_at) SELECT $1,$2,id,'needs_correction','Private note',$3 FROM accounts WHERE email='staff'",
+        [application, revision, date])
+    }
+    for (const [index, wei, tx, date] of [
+      [0, '10000000000000000001', 'fixture-a', '2020-12-31T16:00:00Z'],
+      [1, '20000000000000000002', 'fixture-b', '2021-01-01T15:59:59Z'],
+      [2, '90000000000000000000', null, '2020-12-31T18:00:00Z'],
+      [3, '90000000000000000000', 'fixture-c', null],
+    ]) {
+      await db.query('INSERT INTO payments (application_id,reference_id,amount,tx_hash,confirmed_at) VALUES ($1,$2,$3,$4,$5)',
+        [ids[index], 'fixture-' + index, wei, tx, date])
+    }
+    const query = '?from=2021-01-01&to=2021-01-01'
+    const reports = '/staff/reports'
+    for (const path of [reports, reports + '/pdf']) {
+      assert.equal((await request(path + query)).status, 401)
+      assert.equal((await request(path + query, { cookie: resident })).status, 403)
+      assert.equal((await request(path + '?from=2021-02-29&to=2021-03-01', { cookie: staff })).status, 400)
+    }
+    const response = await request(reports + query, { cookie: staff })
+    assert.equal(response.status, 200, await response.clone().text())
+    const report = await response.json()
+    assert.equal(report.submitted, 2)
+    assert.deepEqual(report.trend, [{ period: '2021-01-01', count: 2 }])
+    assert.deepEqual(report.services.map(({ count }) => count), [1, 0, 1, 0])
+    assert.equal(report.firstDecisions, 2)
+    assert.equal(report.medianSeconds, 1800)
+    assert.equal(report.confirmedPayments, 2)
+    assert.equal(report.totalBnb, '30.000000000000000003')
+
+    const pdf = await request(reports + '/pdf' + query, { cookie: staff })
+    assert.equal(pdf.status, 200)
+    assert.match(pdf.headers.get('content-disposition'), /bayanflow-report-2021-01-01-2021-01-01\.pdf/)
+    const pdfText = await extractText(Buffer.from(await pdf.arrayBuffer()))
+    for (const expected of ['2021-01-01', 'Applications submitted: 2', 'Median time to first decision: 30 min',
+      'Confirmed payments: 2', '30.000000000000000003 BSC Testnet BNB']) assert.ok(pdfText.includes(expected), expected)
+    assert.doesNotMatch(pdfText, /Private fixture name|Private note/)
+
+    const empty = await (await request(reports + '?from=2018-01-01&to=2018-04-01', { cookie: staff })).json()
+    assert.equal(empty.bucket, 'month')
+    assert.equal(empty.medianSeconds, null)
+    assert.equal(empty.totalBnb, '0')
+    assert.deepEqual(empty.trend, ['2018-01', '2018-02', '2018-03', '2018-04'].map(period => ({ period, count: 0 })))
+
+    const longPdf = await request(reports + '/pdf?from=2018-01-01&to=2018-03-31', { cookie: staff })
+    assert.equal(longPdf.status, 200)
+    const longText = await extractText(Buffer.from(await longPdf.arrayBuffer()))
+    assert.ok(longText.includes('2018-03-31'))
+    assert.ok(longText.split('Daily submissions').length > 2)
+  })
 })
