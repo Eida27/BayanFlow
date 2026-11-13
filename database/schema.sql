@@ -48,8 +48,7 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 ALTER TABLE applications
-  ADD COLUMN IF NOT EXISTS service text NOT NULL DEFAULT 'business_permit'
-    CHECK (service IN ('business_permit', 'mayors_clearance')),
+  ADD COLUMN IF NOT EXISTS service text NOT NULL DEFAULT 'business_permit',
   ADD COLUMN IF NOT EXISTS address text,
   ADD COLUMN IF NOT EXISTS purpose text;
 
@@ -57,10 +56,31 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'documents'::regclass AND conname = 'documents_service_requirement_check'
+    WHERE conrelid = 'documents'::regclass
+      AND conname IN ('documents_service_requirement_check', 'documents_municipal_requirement_check')
   ) THEN
     ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_requirement_check;
     ALTER TABLE documents ADD CONSTRAINT documents_service_requirement_check
       CHECK (requirement IN ('profile', 'premises', 'authorization', 'supporting'));
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'applications'::regclass AND conname = 'applications_municipal_service_check'
+  ) THEN
+    ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_service_check;
+    ALTER TABLE applications ADD CONSTRAINT applications_municipal_service_check
+      CHECK (service IN ('business_permit', 'mayors_clearance', 'zoning_clearance'));
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'documents'::regclass AND conname = 'documents_municipal_requirement_check'
+  ) THEN
+    ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_service_requirement_check;
+    ALTER TABLE documents ADD CONSTRAINT documents_municipal_requirement_check
+      CHECK (requirement IN ('profile', 'premises', 'authorization', 'supporting', 'zoning_site', 'zoning_use', 'zoning_ownership'));
   END IF;
 END $$;

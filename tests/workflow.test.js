@@ -1,8 +1,39 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
-import { checklist, clearanceChecklist, extractText, reviewDocuments, validateFindings } from '../backend/review.js'
+import { checklist, clearanceChecklist, extractText, reviewDocuments, validateFindings, zoningChecklist } from '../backend/review.js'
 import { decisionAllowed } from '../backend/workflow.js'
+
+test('zoning reports absent PDFs without calling AI', async t => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('Unexpected AI call') })
+  const requirements = [{ requirement: 'zoning_site', description: 'Check the site.' }]
+  const result = await reviewDocuments({}, { OPENAI_API_KEY: 'test' }, { requirements, allowPartial: true })
+  assert.deepEqual(result.findings.map(({ requirement, status }) => [requirement, status]), [['zoning_site', 'missing']])
+  assert.equal(fetch.mock.callCount(), 0)
+})
+
+test('zoning merges AI findings with absent and unreadable PDFs', async t => {
+  const site = await readFile(new URL('../frontend/public/samples/zoning-site-incomplete.pdf', import.meta.url))
+  const files = { zoning_site: { buffer: site }, zoning_use: { buffer: Buffer.from('%PDF-invalid') } }
+  const finding = { requirement: 'zoning_site', status: 'missing', explanation: 'The lot area is missing.', excerpt: 'Parcel reference: DT-042' }
+  const mock = t.mock.method(globalThis, 'fetch', async () => Response.json({
+    choices: [{ message: { content: JSON.stringify({ findings: [finding] }) } }]
+  }))
+  const options = { requirements: zoningChecklist, allowPartial: true }
+  const env = { OPENAI_API_KEY: 'test' }
+  const result = await reviewDocuments(files, env, options)
+  assert.deepEqual(result.findings.map(({ status }) => status), ['missing', 'unclear', 'missing'])
+  assert.deepEqual(result.findings[0], finding)
+  const [, request] = mock.mock.calls[0].arguments
+  const payload = JSON.parse(JSON.parse(request.body).messages[1].content)
+  assert.deepEqual(Object.keys(payload.documents), ['zoning_site'])
+  assert.deepEqual(payload.checklist, [zoningChecklist[0]])
+
+  finding.excerpt = 'Not in the PDF'
+  const fallback = await reviewDocuments(files, env, options)
+  assert.match(fallback.error, /could not finish/)
+  assert.deepEqual(fallback.findings.map(({ requirement }) => requirement), ['zoning_use', 'zoning_ownership'])
+})
 
 test('staff can decide only a submitted application', () => {
   assert.ok(decisionAllowed('submitted', 'needs_correction'))

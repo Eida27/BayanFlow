@@ -1,6 +1,6 @@
 # BayanFlow
 
-BayanFlow is a hackathon prototype for fictional municipal services. Residents can request a Business Permit or Mayor’s Clearance / Certification, submit sample PDFs, receive an AI completeness check, and correct their submission after staff feedback. Approved applications use a simulated 0.001 tBNB fee on BSC Testnet. The public receipt links to the transaction, and a paid clearance request includes a private demo certificate.
+BayanFlow is a hackathon prototype for fictional municipal services. Residents can request a Business Permit, Mayor’s Clearance / Certification, or Zoning / Locational Clearance. They can submit sample PDFs, see document completeness findings, and correct their submission after staff feedback. Approved applications use a simulated 0.001 tBNB fee on BSC Testnet. The public receipt links to the transaction, and a paid clearance request includes a private demo certificate.
 
 ## Project layout
 
@@ -32,6 +32,15 @@ Use separate browser profiles for resident and staff. Only upload fictional mate
 Follow the [contract setup and verification guide](contracts/README.md). Set `PAYMENT_CONTRACT_ADDRESS` and `PAYMENT_SIGNER_PRIVATE_KEY` in the root `.env` and restart the API. Use the key for the contract's configured **authorization signer**, ideally separate from the deployer and demo treasury. Configure MetaMask for chain 97 and fund the resident demo wallet with enough testnet tBNB for the fee and gas. The first payment authorization binds the application to that wallet. Authorization can be renewed for the same wallet.
 
 ## Rehearse the demo
+
+Run `pnpm db:setup` after updating an existing checkout to add the zoning service while preserving applications and receipts.
+
+### Zoning / Locational Clearance
+
+1. As the resident, start a **Zoning / Locational Clearance** application for **Paper Lantern Reading Room** at **25 Example Avenue, Demo Town**, with proposed use **Operate a community reading room.**
+2. Attach the incomplete site information sheet and incomplete land-use declaration. Leave ownership or owner authorization empty and submit. The checklist flags the absent ownership PDF. With AI configured, it also flags the missing lot area and proposed activity in the attached PDFs.
+3. In a separate browser profile, sign in as staff. Review the findings and attached PDFs, then request corrections with a note. Approval requires all three PDFs in the current revision.
+4. As the resident, refresh and resubmit using all three complete samples. As staff, review the new revision and approve it. As the resident, refresh, pay with the funded BSC Testnet wallet, then open the public receipt and download the private demo zoning clearance.
 
 ### Mayor’s Clearance / Certification
 

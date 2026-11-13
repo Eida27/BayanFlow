@@ -4,9 +4,9 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { getAddress, isAddress } from 'viem'
 import { digest, passwordMatches } from './auth.js'
 import { transaction } from './database.js'
-import { checklist, clearanceChecklist, reviewDocuments } from './review.js'
+import { checklist, clearanceChecklist, reviewDocuments, zoningChecklist } from './review.js'
 import { clearanceCertificate } from './certificate.js'
-import { BUSINESS_PERMIT, MAYORS_CLEARANCE, services } from '../services.js'
+import { BUSINESS_PERMIT, MAYORS_CLEARANCE, ZONING_CLEARANCE, services } from '../services.js'
 import { amount } from './payment.js'
 import { decisionAllowed } from './workflow.js'
 
@@ -19,6 +19,7 @@ const sessionName = 'bayanflow_session'
 const sessionOptions = { httpOnly: true, sameSite: 'strict', path: '/' }
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
 const hex32 = /^0x[0-9a-f]{64}$/i
+const checklists = { [BUSINESS_PERMIT]: checklist, [MAYORS_CLEARANCE]: clearanceChecklist, [ZONING_CLEARANCE]: zoningChecklist }
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status })
@@ -101,7 +102,8 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
     role(req)
     const { rows } = await pool.query(
       `SELECT a.id, a.title, a.service, a.address, a.purpose, a.status, a.revision, a.findings, a.ai_error, a.decision_note, a.created_at,
-              p.payer, p.tx_hash, CASE WHEN a.status = 'paid' THEN p.reference_id END AS receipt_ref
+              p.payer, p.tx_hash, CASE WHEN a.status = 'paid' THEN p.reference_id END AS receipt_ref,
+              ARRAY(SELECT d.requirement FROM documents d WHERE d.application_id = a.id AND d.revision = a.revision) AS uploaded_documents
          FROM applications a LEFT JOIN payments p ON p.application_id = a.id
         WHERE ($1::integer IS NULL OR a.resident_id = $1) ORDER BY a.created_at DESC`,
       [req.user.role === 'resident' ? req.user.id : null])
@@ -120,17 +122,19 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
     if (typeof service !== 'string' || !Object.hasOwn(services, service) ||
         (previous && body.service !== undefined && body.service !== service)) fail(400, 'Choose a valid municipal service.')
     const clearance = service === MAYORS_CLEARANCE
-    const title = requiredText(body.title, clearance ? 'a full name' : 'a business name', 120)
-    const address = clearance ? requiredText(body.address, 'an address', 240) : null
-    const purpose = clearance ? requiredText(body.purpose, 'a purpose', 500) : null
-    const requirements = clearance ? clearanceChecklist : checklist
+    const zoning = service === ZONING_CLEARANCE
+    const title = requiredText(body.title, zoning ? 'an applicant or project name' : clearance ? 'a full name' : 'a business name', 120)
+    const address = zoning || clearance ? requiredText(body.address, zoning ? 'a site address' : 'an address', 240) : null
+    const purpose = zoning || clearance ? requiredText(body.purpose, zoning ? 'a proposed use' : 'a purpose', 500) : null
+    const requirements = checklists[service]
     const names = requirements.map(item => item.requirement)
-    const files = Object.fromEntries(names.map(name => [name, req.files?.[name]?.[0]]))
-    if (Object.keys(req.files ?? {}).length !== names.length ||
-        Object.values(files).some(file => !file?.buffer.subarray(0, 5).equals(Buffer.from('%PDF-')))) {
-      fail(400, 'Attach a PDF for each fictional requirement.')
+    const files = Object.fromEntries(Object.entries(req.files ?? {}).map(([name, [file]]) => [name, file]))
+    if (Object.entries(files).some(([name, file]) => !names.includes(name) || !file.buffer.subarray(0, 5).equals(Buffer.from('%PDF-')))) {
+      fail(400, 'Attach only PDFs for this service.')
     }
-    const result = await review(files, env, { requirements, applicant: clearance ? { name: title, purpose } : undefined })
+    if (!zoning && Object.keys(files).length !== names.length) fail(400, 'Attach a PDF for each fictional requirement.')
+    const applicant = zoning ? { name: title, address, purpose } : clearance ? { name: title, purpose } : undefined
+    const result = await review(files, env, { requirements, applicant, allowPartial: zoning })
     const id = previous?.id ?? randomUUID()
     await transaction(pool, async db => {
       let number = 1
@@ -150,8 +154,8 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
            VALUES ($1,$2,$3,'submitted',$4,$5,$6,$7,$8)`,
           [id, req.user.id, title, JSON.stringify(result.findings), result.error, service, address, purpose])
       }
-      for (const name of names) {
-        await db.query('INSERT INTO documents VALUES ($1,$2,$3,$4)', [id, number, name, files[name].buffer])
+      for (const [name, file] of Object.entries(files)) {
+        await db.query('INSERT INTO documents VALUES ($1,$2,$3,$4)', [id, number, name, file.buffer])
       }
     })
     res.status(previous ? 200 : 201).json({ id })
@@ -162,13 +166,14 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
   api.get('/applications/:id/certificate', async (req, res) => {
     role(req, 'resident')
     const application = await ownedApplication(pool, req)
-    if (application.service !== MAYORS_CLEARANCE || application.status !== 'paid') fail(404, 'Certificate not found.')
+    const zoning = application.service === ZONING_CLEARANCE
+    if ((!zoning && application.service !== MAYORS_CLEARANCE) || application.status !== 'paid') fail(404, 'Certificate not found.')
     const { rows: [payment] } = await pool.query(
       'SELECT confirmed_at FROM payments WHERE application_id=$1 AND tx_hash IS NOT NULL AND confirmed_at IS NOT NULL',
       [application.id])
     if (!payment) fail(404, 'Certificate not found.')
     const pdf = await clearanceCertificate(application, payment)
-    res.attachment('bayanflow-demo-clearance.pdf').send(pdf)
+    res.attachment(zoning ? 'bayanflow-demo-zoning-clearance.pdf' : 'bayanflow-demo-clearance.pdf').send(pdf)
   })
   api.get('/applications/:id/documents/:requirement', async (req, res) => {
     role(req)
@@ -193,6 +198,12 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
       const application = await ownedApplication(db, req, true)
       if (application.revision !== revision) fail(409, 'A new revision is available. Refresh the application before reviewing it.')
       if (!decisionAllowed(application.status, status)) fail(409, 'This application has already been reviewed.')
+      if (status === 'approved' && application.service === ZONING_CLEARANCE) {
+        const { rowCount } = await db.query(
+          'SELECT requirement FROM documents WHERE application_id=$1 AND revision=$2 AND requirement=ANY($3::text[])',
+          [application.id, revision, zoningChecklist.map(item => item.requirement)])
+        if (rowCount !== zoningChecklist.length) fail(409, 'All three zoning PDFs must be attached before approval.')
+      }
       await db.query(
         'INSERT INTO decisions (application_id,revision,reviewer_id,status,note) VALUES ($1,$2,$3,$4,$5)',
         [application.id, application.revision, req.user.id, status, note.trim()])

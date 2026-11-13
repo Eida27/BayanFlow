@@ -5,7 +5,12 @@ const samples = {
   'premises-declaration': ['Premises-use declaration', 'Site: 10 Example Lane, Demo Town', 'Intended use: Stationery retail'],
   'incomplete-premises-declaration': ['Premises-use declaration', 'Site: 10 Example Lane, Demo Town'],
   'owner-authorization': ['Owner authorization', 'Casey Sample authorizes Paper Lantern Stationery', 'to use 10 Example Lane, Demo Town.'],
-  'clearance-supporting': ['Volunteer application acknowledgment', 'Applicant: Alex Sample', 'Address: 10 Example Lane, Demo Town', 'Purpose: Volunteer application for the Demo Town Reading Program', 'The program requests a municipal clearance from the applicant.']
+  'clearance-supporting': ['Volunteer application acknowledgment', 'Applicant: Alex Sample', 'Address: 10 Example Lane, Demo Town', 'Purpose: Volunteer application for the Demo Town Reading Program', 'The program requests a municipal clearance from the applicant.'],
+  'zoning-site': ['Site information sheet', 'Site address: 25 Example Avenue, Demo Town', 'Parcel reference: DT-042', 'Lot area: 240 square meters'],
+  'zoning-site-incomplete': ['Site information sheet', 'Site address: 25 Example Avenue, Demo Town', 'Parcel reference: DT-042'],
+  'zoning-use': ['Land-use declaration', 'Site address: 25 Example Avenue, Demo Town', 'Project: Paper Lantern Reading Room', 'Proposed activity: Operate a community reading room.'],
+  'zoning-use-incomplete': ['Land-use declaration', 'Site address: 25 Example Avenue, Demo Town', 'Project: Paper Lantern Reading Room'],
+  'zoning-ownership': ['Owner authorization', 'Site address: 25 Example Avenue, Demo Town', 'I, Casey Sample, own this site and authorize its use', 'for the Paper Lantern Reading Room project.']
 }
 
 const folder = new URL('../frontend/public/samples/', import.meta.url)

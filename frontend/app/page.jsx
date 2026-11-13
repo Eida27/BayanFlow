@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createPublicClient, createWalletClient, custom, http } from 'viem'
 import { bscTestnet } from 'viem/chains'
 import { api, Header, Footer, explorer } from './shared'
-import { BUSINESS_PERMIT, MAYORS_CLEARANCE, services } from '../../services.js'
+import { BUSINESS_PERMIT, ZONING_CLEARANCE, services } from '../../services.js'
 
 const statuses = {
   submitted: 'Under review',
@@ -30,7 +30,7 @@ function SignIn({ signIn, busy }) {
     <section className="intro">
       <span className="kicker"><i /> MUNICIPAL SERVICES</span>
       <h1>Municipal services<br />in one place<span>.</span></h1>
-      <p>Apply for a business permit or Mayor’s Clearance, track your review, and verify your testnet payment.</p>
+      <p>Apply for a business permit, Mayor’s Clearance, or Zoning / Locational Clearance. Track staff review and verify your testnet payment.</p>
       <ol className="journey">
         <li><b>01</b><span>Submit</span></li>
         <li><b>02</b><span>Review</span></li>
@@ -58,21 +58,30 @@ function SignIn({ signIn, busy }) {
 }
 
 function ApplicationForm({ application, service = application?.service ?? BUSINESS_PERMIT, submit, busy }) {
-  const clearance = service === MAYORS_CLEARANCE
+  const clearance = service !== BUSINESS_PERMIT
+  const zoning = service === ZONING_CLEARANCE
   const { documents } = services[service]
   return <form className="stack" onSubmit={event => {
     event.preventDefault()
-    submit(new FormData(event.currentTarget))
+    const data = new FormData(event.currentTarget)
+    if (zoning) {
+      for (const [name] of documents) if (!data.get(name)?.name) data.delete(name)
+    }
+    submit(data)
   }}>
     <input type="hidden" name="service" value={service} />
-    <label>{clearance ? 'Full name' : 'Business name'}<input name="title" required maxLength={120} defaultValue={application?.title ?? ''} /></label>
+    <label>{zoning ? 'Applicant or project name' : clearance ? 'Full name' : 'Business name'}<input name="title" required maxLength={120} defaultValue={application?.title ?? ''} /></label>
     {clearance && <>
-      <label>Address<textarea name="address" rows="2" required maxLength={240} defaultValue={application?.address ?? ''} /></label>
-      <label>Purpose of request<textarea name="purpose" rows="3" required maxLength={500} defaultValue={application?.purpose ?? ''} /></label>
+      <label>{zoning ? 'Site address' : 'Address'}<textarea name="address" rows="2" required maxLength={240} defaultValue={application?.address ?? ''} /></label>
+      <label>{zoning ? 'Proposed use' : 'Purpose of request'}<textarea name="purpose" rows="3" required maxLength={500} defaultValue={application?.purpose ?? ''} /></label>
     </>}
-    {documents.map(([name, label, sample]) => <div className="upload" key={name}>
-      <label>{label}<input name={name} type="file" accept=".pdf,application/pdf" required /></label>
-      <a href={'/samples/' + sample} download>Download sample</a>
+    {zoning && <p>{application ? 'Reattach every PDF you want included in this revision.' : 'You can submit with missing PDFs. Staff needs all three before approval.'}</p>}
+    {documents.map(([name, label, sample, incomplete]) => <div className="upload" key={name}>
+      <label>{label}<input name={name} type="file" accept=".pdf,application/pdf" required={!zoning} /></label>
+      <div className="document-links">
+        <a href={'/samples/' + sample} download>Download sample</a>
+        {incomplete && <a href={'/samples/' + incomplete} download>Download incomplete sample</a>}
+      </div>
     </div>)}
     {!clearance && <a href="/samples/incomplete-premises-declaration.pdf" download>Download incomplete premises sample</a>}
     <button className="button primary" disabled={busy}>{application ? 'Resubmit application' : 'Submit application'}</button>
@@ -81,8 +90,11 @@ function ApplicationForm({ application, service = application?.service ?? BUSINE
 
 function Details({ application, staff, run, busy, setPending, pending }) {
   const base = '/applications/' + application.id
-  const clearance = application.service === MAYORS_CLEARANCE
+  const clearance = (application.service ?? BUSINESS_PERMIT) !== BUSINESS_PERMIT
+  const zoning = application.service === ZONING_CLEARANCE
   const { documents } = services[application.service ?? BUSINESS_PERMIT]
+  const uploaded = new Set(application.uploaded_documents)
+  const missingZoningDocs = zoning && documents.some(([name]) => !uploaded.has(name))
   const [paymentError, setPaymentError] = useState('')
   const paymentWarning = paymentError || (!application.payer && 'Authorize a wallet before confirming payment.')
 
@@ -136,12 +148,14 @@ function Details({ application, staff, run, busy, setPending, pending }) {
 
   return <div className="details stack">
     {clearance && <div className="applicant-details">
-      <p><strong>Address</strong> {application.address}</p>
-      <p><strong>Purpose</strong> {application.purpose}</p>
+      <p><strong>{zoning ? 'Site address' : 'Address'}</strong> {application.address}</p>
+      <p><strong>{zoning ? 'Proposed use' : 'Purpose'}</strong> {application.purpose}</p>
     </div>}
-    <div className="document-links">{documents.map(([name, label]) => <a key={name} href={`/api${base}/documents/${name}?revision=${application.revision}`} target="_blank" rel="noreferrer">{label} ↗</a>)}</div>
+    <div className="document-links">{documents.map(([name, label]) => zoning && !uploaded.has(name)
+      ? <span key={name}>{label} · No PDF attached</span>
+      : <a key={name} href={`/api${base}/documents/${name}?revision=${application.revision}`} target="_blank" rel="noreferrer">{label} ↗</a>)}</div>
     {(application.findings?.length > 0 || application.ai_error) && <section className="findings">
-      <h4>AI document review</h4>
+      <h4>{zoning ? 'Document checklist' : 'AI document review'}</h4>
       <p>Advisory findings for staff review.</p>
       {application.ai_error && <p className="notice">{application.ai_error}</p>}
       {application.findings?.map((finding, index) => <div className="finding" key={index}>
@@ -157,7 +171,8 @@ function Details({ application, staff, run, busy, setPending, pending }) {
       const data = new FormData(event.currentTarget)
       run(() => api(base + '/decision', { status: data.get('status'), note: data.get('note'), revision: application.revision }))
     }}>
-      <label>Decision<select name="status" defaultValue="" required><option value="" disabled>Choose a decision</option><option value="approved">Approve for payment</option><option value="needs_correction">Request corrections</option><option value="rejected">Reject</option></select></label>
+      {missingZoningDocs && <p className="notice">All three zoning PDFs must be attached before approval.</p>}
+      <label>Decision<select name="status" defaultValue="" required><option value="" disabled>Choose a decision</option><option value="approved" disabled={missingZoningDocs}>Approve for payment</option><option value="needs_correction">Request corrections</option><option value="rejected">Reject</option></select></label>
       <label>Decision note<textarea name="note" rows="3" required maxLength={1000} /></label>
       <button className="button primary" disabled={busy}>Save decision</button>
     </form>}
@@ -179,7 +194,7 @@ function Details({ application, staff, run, busy, setPending, pending }) {
       {pending && <button className="button secondary" disabled={busy} onClick={() => runPayment(() => verifyPayment())}>Search for a matching payment</button>}
     </section>}
     {application.status === 'paid' && <div className="document-links">
-      {!staff && clearance && <a href={`/api${base}/certificate`} download>Download demo clearance PDF</a>}
+      {!staff && clearance && <a href={`/api${base}/certificate`} download>{zoning ? 'Download demo zoning clearance PDF' : 'Download demo clearance PDF'}</a>}
       {application.receipt_ref && <a href={'/receipts/' + application.receipt_ref}>Open public receipt ↗</a>}
       {application.tx_hash && <a href={explorer + application.tx_hash} target="_blank" rel="noreferrer">View on BscScan ↗</a>}
     </div>}

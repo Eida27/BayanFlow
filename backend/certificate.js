@@ -1,11 +1,13 @@
 import PDFDocument from 'pdfkit'
 import { fileURLToPath } from 'node:url'
+import { MAYORS_CLEARANCE, ZONING_CLEARANCE, services } from '../services.js'
 
 const regular = fileURLToPath(import.meta.resolve('@fontsource/noto-sans/files/noto-sans-latin-400-normal.woff'))
 const bold = fileURLToPath(import.meta.resolve('@fontsource/noto-sans/files/noto-sans-latin-700-normal.woff'))
 const paymentDate = new Intl.DateTimeFormat('en-PH', { dateStyle: 'long', timeZone: 'Asia/Manila' })
 
 export function clearanceCertificate(application, payment) {
+  const zoning = application.service === ZONING_CLEARANCE
   const pdf = new PDFDocument({ size: 'A4', margin: 56, info: { Title: 'BayanFlow Demo Clearance' } })
   const chunks = []
   const result = new Promise((resolve, reject) => {
@@ -17,13 +19,13 @@ export function clearanceCertificate(application, payment) {
   pdf.registerFont('Bold', bold)
 
   pdf.font('Bold').fontSize(12).fillColor('#173f35').text('BAYANFLOW')
-  pdf.moveDown(0.6).fontSize(23).text('Mayor’s Clearance / Certification')
+  pdf.moveDown(0.6).fontSize(23).text(services[zoning ? ZONING_CLEARANCE : MAYORS_CLEARANCE].label)
   pdf.moveDown(0.6).fontSize(11).fillColor('#9c3024').text('DEMO ONLY — NOT AN OFFICIAL MUNICIPAL DOCUMENT')
   pdf.moveDown(1.4)
   for (const [label, value] of [
-    ['Applicant', application.title],
-    ['Address', application.address],
-    ['Purpose', application.purpose],
+    [zoning ? 'Applicant or project' : 'Applicant', application.title],
+    [zoning ? 'Site address' : 'Address', application.address],
+    [zoning ? 'Proposed use' : 'Purpose', application.purpose],
     ['Application reference', application.id],
     ['Testnet payment confirmed', paymentDate.format(payment.confirmed_at)],
   ]) {

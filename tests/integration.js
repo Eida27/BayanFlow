@@ -33,10 +33,16 @@ test('fictional permit from submission through retried receipt confirmation', as
   await db.query("INSERT INTO documents VALUES ($1, 1, 'profile', $2)", [legacyId, legacyPdf])
   await db.query('INSERT INTO payments (application_id, reference_id, amount, tx_hash, contract, confirmed_at) VALUES ($1, $2, 1, $3, $4, now())',
     [legacyId, legacyReference, legacyHash, `0x${'22'.repeat(20)}`])
+  await db.query(setup.slice(0, setup.lastIndexOf('\nDO $$')))
+  await db.query("ALTER TABLE applications ADD CONSTRAINT applications_service_check CHECK (service IN ('business_permit', 'mayors_clearance'))")
+  const legacyClearanceId = randomUUID()
+  await db.query("INSERT INTO applications (id, resident_id, title, status, service) SELECT $1, id, 'Legacy clearance', 'submitted', 'mayors_clearance' FROM accounts WHERE email='other'", [legacyClearanceId])
+  await db.query("INSERT INTO documents VALUES ($1, 1, 'supporting', $2)", [legacyClearanceId, legacyPdf])
   await db.query(setup)
   await db.query(setup)
   const hash = `0x${'33'.repeat(32)}`
   const clearanceHash = `0x${'55'.repeat(32)}`
+  const zoningHash = `0x${'88'.repeat(32)}`
   const payer = `0x${'11'.repeat(20)}`
   const contract = `0x${'22'.repeat(20)}`
   let verifications = 0
@@ -46,7 +52,7 @@ test('fictional permit from submission through retried receipt confirmation', as
     authorize: async payment => ({ referenceId: payment.reference_id }),
     verify: async (_payment, candidate) => {
       verifications++
-      return candidate === clearanceHash ? clearanceHash : !candidate || candidate === hash ? hash : null
+      return [clearanceHash, zoningHash, hash].includes(candidate) ? candidate : !candidate ? hash : null
     }
   } })
   const server = await new Promise(resolve => {
@@ -83,6 +89,7 @@ test('fictional permit from submission through retried receipt confirmation', as
 
   const [resident, staff, other] = await Promise.all(['resident', 'staff', 'other'].map(login))
   assert.equal((await request(`/applications/${legacyId}/documents/profile`, { cookie: resident })).status, 200)
+  assert.equal((await request(`/applications/${legacyClearanceId}/documents/supporting`, { cookie: other })).status, 200)
   assert.equal((await (await request('/receipts/' + legacyReference)).json()).hash, legacyHash)
   assert.equal((await request('/applications')).status, 401)
   assert.equal((await request('/applications', { cookie: staff, body: await form(false) })).status, 403)
@@ -176,4 +183,62 @@ test('fictional permit from submission through retried receipt confirmation', as
   const rejectedPath = '/applications/' + (await rejected.json()).id
   assert.equal((await review(rejectedPath, 'rejected', 1)).status, 200)
   assert.equal((await request(rejectedPath + '/authorize', { cookie: resident, body: { payer } })).status, 409)
+
+  const zoningForm = async (attachments = {}) => {
+    const body = new FormData()
+    body.set('service', 'zoning_clearance')
+    body.set('title', 'Paper Lantern Reading Room')
+    body.set('address', '25 Example Avenue, Demo Town')
+    body.set('purpose', 'Operate a community reading room.')
+    for (const [name, sample] of Object.entries(attachments)) {
+      body.set(name, new Blob([await readFile(new URL(`../frontend/public/samples/${sample}.pdf`, import.meta.url))]), sample + '.pdf')
+    }
+    return body
+  }
+  const applicationsPath = '/applications'
+  const submitZoning = body => request(applicationsPath, { cookie: resident, body })
+  const current = async (id, cookie = resident) => (await (await request(applicationsPath, { cookie })).json())
+    .applications.find(application => application.id === id)
+  assert.equal((await submitZoning(await zoningForm({ supporting: 'clearance-supporting' }))).status, 400)
+  const empty = await submitZoning(await zoningForm())
+  assert.equal(empty.status, 201)
+  const emptyId = (await empty.json()).id
+  assert.equal((await current(emptyId)).findings.length, 3)
+  const partial = await submitZoning(await zoningForm({ zoning_site: 'zoning-site-incomplete', zoning_use: 'zoning-use-incomplete' }))
+  assert.equal(partial.status, 201)
+  const { id: zoningId } = await partial.json()
+  const zoningPath = applicationsPath + '/' + zoningId
+  const staffView = await current(zoningId, staff)
+  assert.deepEqual(staffView.uploaded_documents.sort(), ['zoning_site', 'zoning_use'])
+  assert.deepEqual(staffView.findings.map(({ requirement, status }) => [requirement, status]), [['zoning_ownership', 'missing']])
+  assert.match(staffView.ai_error, /manually/)
+  assert.equal((await review(zoningPath, 'approved', 1)).status, 409)
+  assert.equal((await review(zoningPath, 'needs_correction', 1)).status, 200)
+  const complete = await zoningForm({ zoning_site: 'zoning-site', zoning_use: 'zoning-use', zoning_ownership: 'zoning-ownership' })
+  assert.equal((await request(zoningPath + '/revision', { cookie: resident, body: complete })).status, 200)
+  const oldSheet = await request(zoningPath + '/documents/zoning_site?revision=1', { cookie: staff })
+  assert.equal(oldSheet.status, 200)
+  assert.doesNotMatch(await oldSheet.text(), /Lot area/)
+  assert.equal((await request(zoningPath + '/documents/zoning_ownership?revision=1', { cookie: staff })).status, 404)
+  assert.equal((await review(zoningPath, 'approved', 2)).status, 200)
+  const zoningCertificate = cookie => request(zoningPath + '/certificate', { cookie })
+  assert.equal((await zoningCertificate(resident)).status, 404)
+  assert.equal((await request(zoningPath + '/authorize', { cookie: resident, body: { payer } })).status, 200)
+  const confirmZoning = () => request(zoningPath + '/confirm', { cookie: resident, body: { hash: zoningHash } })
+  const confirmed = await confirmZoning()
+  assert.equal(confirmed.status, 200)
+  const zoningPayment = await confirmed.json()
+  assert.deepEqual(await (await confirmZoning()).json(), zoningPayment)
+  const zoningDownload = await zoningCertificate(resident)
+  assert.equal(zoningDownload.status, 200)
+  const zoningText = await extractText(Buffer.from(await zoningDownload.arrayBuffer()))
+  assert.match(zoningText, /Zoning \/ Locational Clearance/)
+  assert.match(zoningText, /DEMO ONLY — NOT AN OFFICIAL MUNICIPAL DOCUMENT/)
+  assert.match(zoningText, /Paper Lantern Reading Room/)
+  assert.match(zoningText, /25 Example Avenue/)
+  assert.match(zoningText, /Operate a community reading room/)
+  assert.equal((await zoningCertificate(other)).status, 404)
+  assert.equal((await zoningCertificate(staff)).status, 403)
+  assert.deepEqual(await (await request('/receipts/' + zoningPayment.referenceId)).json(),
+    { referenceId: zoningPayment.referenceId, hash: zoningHash, amount: '1000000000000000', chainId: 97, contract })
 })
