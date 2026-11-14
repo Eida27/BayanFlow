@@ -27,15 +27,6 @@
 .resident-site .section-title { flex-wrap: wrap; }
 .resident-skip { position: absolute; z-index: 2; top: 8px; left: 8px; padding: 12px 16px; background: white; border-radius: 8px; }
 .resident-skip:not(:focus) { width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.resident-login { grid-template-columns: 1fr 1fr; align-items: stretch; }
-.resident-login .intro {
-  background: radial-gradient(ellipse at 95% 100%, #21654b, transparent 68%), var(--resident-forest);
-  border-radius: 18px;
-}
-.resident-login .intro p { color: #dfede5; }
-.resident-password { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-.resident-password input { flex: 1 1 120px; width: auto; }
-.resident-password button { flex: none; }
 .resident-hero {
   display: flex;
   flex-wrap: wrap;
@@ -105,10 +96,6 @@
 .resident-site .receipt dd { margin-bottom: 0; padding-block: 4px 12px; }
 .resident-site .receipt dt:not(:first-child) { padding-top: 12px; border-top: 1px solid var(--line); }
 
-@media (max-width: 750px) {
-  .resident-login { grid-template-columns: 1fr; }
-  .resident-login .intro { padding: 22px; }
-}
 @media (max-width: 540px) {
   .resident-service-options { grid-template-columns: 1fr; }
   .resident-site .application summary { grid-template-columns: 24px minmax(0, 1fr); gap: 6px 12px; }

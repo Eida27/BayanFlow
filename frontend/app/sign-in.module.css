@@ -1,0 +1,193 @@
+.page {
+  --ink: #1a3027;
+  --muted: #4b6054;
+  --dark-green: #174c39;
+  --line: #d6ddd4;
+  --control-border: #748779;
+  --paper: #f9f7ef;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.page :focus-visible { outline-color: #19734e; }
+.page :global(.shell) { width: min(1320px, calc(100% - clamp(32px, 7vw, 112px))); }
+.page :global(.header) { background: transparent; }
+.page :global(.header-inner) { min-height: 68px; }
+.page :global(.brand) { min-height: 44px; }
+.page :global(.environment) { background: #e6ecdf; }
+.page :global(.footer) { flex-direction: row; align-items: baseline; flex-wrap: wrap; }
+
+.skip {
+  position: absolute;
+  z-index: 1;
+  inset: 8px auto auto 8px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: white;
+}
+
+.srOnly, .skip:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.main {
+  display: grid;
+  align-items: center;
+  flex: 1;
+  width: min(1320px, calc(100% - clamp(32px, 7vw, 112px)));
+  margin-inline: auto;
+  padding-block: clamp(24px, 4vw, 56px);
+}
+
+.layout { display: grid; gap: 24px; }
+.access { display: grid; align-items: center; min-width: 0; }
+.accessContent { width: min(100%, 440px); margin-inline: auto; }
+.access h1 {
+  font-size: clamp(2rem, 4.2vw, 3.35rem);
+  line-height: 1.05;
+  letter-spacing: -.055em;
+  text-wrap: balance;
+}
+.description { margin-block: 12px 26px; }
+.accounts { min-width: 0; padding: 0; margin: 0 0 23px; border: 0; }
+.accounts legend, .form label { font-size: .9rem; font-weight: 700; }
+.accounts legend { margin-bottom: 8px; padding: 0; }
+.accountOptions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.account {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  align-content: start;
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  color: var(--ink);
+  background: #fffefa;
+  text-align: start;
+  cursor: pointer;
+}
+.account[aria-pressed=true] {
+  background: #eaf1e4;
+  border-color: var(--dark-green);
+  box-shadow: inset 0 0 0 1px var(--dark-green);
+}
+.account:hover:enabled { background: #edf2e8; }
+.account:disabled { opacity: .7; cursor: wait; }
+.accountIcon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 4px;
+  border-radius: 9px;
+  background: #dfe9db;
+  color: var(--dark-green);
+}
+.selected {
+  position: absolute;
+  inset: 12px 12px auto auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--dark-green);
+  color: white;
+}
+.selected svg { width: 14px; height: 14px; }
+.accountDescription { font-size: .81rem; color: var(--muted); }
+.form { display: grid; gap: 6px; }
+.form label:not(:first-child) { margin-top: 9px; }
+.form input { min-width: 0; min-height: 50px; border-color: var(--control-border); border-radius: 10px; background: #fffefa; }
+.password { position: relative; }
+.password input { padding-inline-end: 55px; }
+.passwordToggle {
+  position: absolute;
+  inset: 3px 3px 3px auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dark-green);
+  cursor: pointer;
+}
+.passwordToggle:hover { background: #eaf1e4; }
+.submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  margin-top: 13px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--dark-green);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+.submit:hover:enabled { background: #0f3e2c; }
+.submit:disabled { background: #426454; cursor: wait; }
+.account, .submit, .passwordToggle { transition: background-color 150ms ease; }
+.notice, .error {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: 9px;
+  font-size: .86rem;
+  overflow-wrap: anywhere;
+}
+.notice { margin-top: 18px; color: #365246; background: #edf0e6; }
+.error { margin-top: 8px; color: #80252e; background: #fce7e8; }
+.notice svg, .error svg { flex: none; width: 17px; height: 17px; margin-top: 2px; }
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #13382c;
+  color: #fff9e7;
+}
+.heroCopy { padding: clamp(22px, 3.4vw, 52px); }
+.hero h2 {
+  max-width: 15ch;
+  font-size: clamp(1.7rem, 4.4vw, 4.6rem);
+  line-height: 1.02;
+  letter-spacing: -.05em;
+  text-wrap: balance;
+}
+.hero p { max-width: 36ch; margin-top: 14px; color: #e0eddf; }
+.heroArt { display: none; }
+
+@media (min-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: clamp(32px, 5vw, 84px); }
+  .hero { grid-area: 1 / 1; }
+  .heroArt {
+    display: block;
+    flex: 1;
+    min-height: 255px;
+    background: #28523d url('/municipal-hall.webp') center 55% / cover no-repeat;
+  }
+  .access { grid-area: 1 / 2; padding-block: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account, .submit, .passwordToggle { transition: none; }
+}

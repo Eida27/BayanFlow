@@ -13,6 +13,7 @@ import { StaffNotifications, StaffSettings } from './staff-notifications'
 import { useVisibleRefresh } from './use-visible-refresh'
 import StaffShell, { StaffIcon } from './staff-shell'
 import ResidentApplication from './resident-application'
+import SignIn from './sign-in'
 import { reportRange, reportTimezone } from '../../report-dates.js'
 import { BUSINESS_PERMIT, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../../services.js'
 
@@ -33,46 +34,6 @@ const payAbi = [{
 }]
 const paymentKey = id => `bayanflow-payment-${id}`
 const testnet = createPublicClient({ chain: bscTestnet, transport: http() })
-
-function SignIn({ signIn, busy, error }) {
-  const [role, setRole] = useState('resident')
-  const [visible, setVisible] = useState(false)
-  return <div className="login-grid resident-login">
-    <section className="intro">
-      <span className="kicker"><i /> MUNICIPAL SERVICES</span>
-      <h1>Municipal services<br />in one place<span>.</span></h1>
-      <p>Apply for municipal permits and clearances, track staff review, and verify your testnet payment.</p>
-    </section>
-    <section className="panel login-panel">
-      <h2>Sign in to BayanFlow</h2>
-      <p>Choose a demo account to try the application workflow.</p>
-      <div className="role-toggle" aria-label="Demo account">
-        {['resident', 'staff'].map(value => <button type="button" key={value} disabled={busy} aria-pressed={role === value} onClick={() => {
-          setVisible(false)
-          setRole(value)
-        }}>{value === 'resident' ? 'Resident' : 'Municipal staff'}</button>)}
-      </div>
-      <form key={role} className="stack" onSubmit={event => {
-        event.preventDefault()
-        const data = new FormData(event.currentTarget)
-        signIn({ email: data.get('email'), password: data.get('password') })
-      }}>
-        <label>Email address<input name="email" type="email" required autoComplete="username" defaultValue={`${role}@bayanflow.test`} /></label>
-        <div>
-          <label htmlFor="demo-password">Password</label>
-          <div className="resident-password">
-            <input id="demo-password" name="password" type={visible ? 'text' : 'password'} required autoComplete="current-password" defaultValue={`${role}-demo`} />
-            <button type="button" className="button secondary" aria-controls="demo-password"
-              onClick={() => setVisible(!visible)}>{visible ? 'Hide password' : 'Show password'}</button>
-          </div>
-        </div>
-        {error && <p className="error" role="alert">{error}</p>}
-        <button className="button primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'} <span aria-hidden="true">→</span></button>
-      </form>
-      <p className="notice">Use only the fictional sample documents. Payments use test BNB.</p>
-    </section>
-  </div>
-}
 
 function Details({ application, staff, run, decide, busy, setPending, pending, submitApplication }) {
   const base = '/applications/' + application.id
@@ -427,39 +388,40 @@ export default function Portal({ children }) {
     {section === 'applications' && <Suspense fallback={<StaffLoading>Loading applications…</StaffLoading>}><StaffQueueRoute /></Suspense>}
   </StaffShell>
 
+  if (!user) return <SignIn loading={loading} busy={busy} error={error} clearError={() => setError('')}
+    signIn={credentials => run(async () => {
+      const { user } = await api('/login', credentials)
+      setUser(user)
+    }, false)} />
+
   return <div className="resident-site">
     <a className="resident-skip" href="#resident-main">Skip to main content</a>
     <Header user={user} busy={busy} signOut={signOut} />
     <main className="shell main" id="resident-main" tabIndex={-1}>
-      {loading ? <p role="status">Loading BayanFlow…</p> : !user ? <SignIn busy={busy} error={error} signIn={credentials => run(async () => {
-        const { user } = await api('/login', credentials)
-        setUser(user)
-      }, false)} /> : <>
-        <section className="resident-hero">
-          <div><span className="kicker">Resident Portal</span>
-          <h1>Municipal services</h1>
-          <p>Submit documents and follow your applications through review and payment.</p></div>
-          {!showForm && <button className="button primary" ref={startButton} onClick={() => setShowForm(true)} disabled={busy}>Start an application</button>}
-        </section>
-        {showForm && <section className="resident-new stack">
-          <h2>New application</h2>
-          <ResidentApplication busy={busy} submit={submitApplication} onCancel={() => {
-            setShowForm(false)
-            requestAnimationFrame(() => startButton.current?.focus())
-          }} />
-        </section>}
-        <section className="panel list-panel">
-          <div className="section-title"><h2 ref={residentHeading} tabIndex={-1}>Your applications</h2><button className="button secondary" disabled={busy || applicationsLoading} onClick={refresh}>{applicationsError ? 'Retry' : 'Refresh'}</button></div>
-          {residentNotice && <p className="notice" role="status">{residentNotice}</p>}
-          {error && <p className="error" role="alert">{error}</p>}
-          {applicationsLoading && <p role="status">{applications === null ? 'Loading applications…' : 'Refreshing applications…'}</p>}
-          {applicationsError && <p className="error" role="alert">{residentFocus.current ? 'Your application was saved. Retry to see its latest status.' : applicationsError}</p>}
-          {applications === null ? null : applications.length ? applications.map(application => <ApplicationCard key={application.id}
-            application={application} run={run} busy={busy} submitApplication={submitApplication} />)
-            : <div className="empty"><StaffIcon name="applications" /><h3>No applications yet</h3><p>Your submitted applications will appear here.</p>
-              {!showForm && <button className="button secondary" disabled={busy} onClick={() => setShowForm(true)}>Choose a service</button>}</div>}
-        </section>
-      </>}
+      <section className="resident-hero">
+        <div><span className="kicker">Resident Portal</span>
+        <h1>Municipal services</h1>
+        <p>Submit documents and follow your applications through review and payment.</p></div>
+        {!showForm && <button className="button primary" ref={startButton} onClick={() => setShowForm(true)} disabled={busy}>Start an application</button>}
+      </section>
+      {showForm && <section className="resident-new stack">
+        <h2>New application</h2>
+        <ResidentApplication busy={busy} submit={submitApplication} onCancel={() => {
+          setShowForm(false)
+          requestAnimationFrame(() => startButton.current?.focus())
+        }} />
+      </section>}
+      <section className="panel list-panel">
+        <div className="section-title"><h2 ref={residentHeading} tabIndex={-1}>Your applications</h2><button className="button secondary" disabled={busy || applicationsLoading} onClick={refresh}>{applicationsError ? 'Retry' : 'Refresh'}</button></div>
+        {residentNotice && <p className="notice" role="status">{residentNotice}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
+        {applicationsLoading && <p role="status">{applications === null ? 'Loading applications…' : 'Refreshing applications…'}</p>}
+        {applicationsError && <p className="error" role="alert">{residentFocus.current ? 'Your application was saved. Retry to see its latest status.' : applicationsError}</p>}
+        {applications === null ? null : applications.length ? applications.map(application => <ApplicationCard key={application.id}
+          application={application} run={run} busy={busy} submitApplication={submitApplication} />)
+          : <div className="empty"><StaffIcon name="applications" /><h3>No applications yet</h3><p>Your submitted applications will appear here.</p>
+            {!showForm && <button className="button secondary" disabled={busy} onClick={() => setShowForm(true)}>Choose a service</button>}</div>}
+      </section>
     </main>
     <Footer />
   </div>

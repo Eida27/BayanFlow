@@ -29,21 +29,12 @@ i { border-radius: 50%; width: 7px; height: 7px; background: currentColor; }
 .main { flex: 1; padding-block: 52px; }
 .footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-block: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
 .footer strong { color: var(--ink); }
-.login-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 24px; }
-.intro, .workspace-hero { border-radius: 22px; color: white; background: radial-gradient(ellipse at 100% 100%, #125a50 0%, transparent 58%), #182c40; padding: clamp(24px, 5vw, 58px); }
-.intro { display: flex; flex-direction: column; justify-content: center; gap: 24px; }
-.intro p, .workspace-hero p { color: #c9d9e6; max-width: 48ch; }
+.workspace-hero { border-radius: 22px; color: white; background: radial-gradient(ellipse at 100% 100%, #125a50 0%, transparent 58%), #182c40; padding: clamp(24px, 5vw, 58px); }
+.workspace-hero p { color: #c9d9e6; max-width: 48ch; }
 .kicker { font-size: .75rem; font-weight: 750; letter-spacing: .11em; color: var(--green); }
-.intro .kicker, .workspace-hero .kicker { color: #74e4c5; }
-.journey { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; list-style: none; padding: 0; margin: 8px 0 0; }
-.journey li { display: grid; gap: 8px; border-top: 1px solid #809aa478; padding-top: 10px; font-size: .88rem; }
-.journey b { color: #74e4c5; font: 600 .75rem/1.5 "IBM Plex Mono", monospace; }
+.workspace-hero .kicker { color: #74e4c5; }
 .panel { background: var(--paper); border-radius: 22px; border: 1px solid var(--line); padding: clamp(18px, 3vw, 36px); }
-.login-panel > p, .form-panel > p { margin-block: 8px 22px; }
-.login-panel .notice { margin: 18px 0 0; }
-.role-toggle { display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--back); margin-bottom: 16px; }
-.role-toggle button { flex: 1; padding: 6px; min-height: 44px; border: 1px solid transparent; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; }
-.role-toggle button[aria-pressed=true] { background: white; border-color: var(--line); color: var(--ink); font-weight: 650; }
+.form-panel > p { margin-block: 8px 22px; }
 .stack { display: grid; gap: 14px; }
 label { display: grid; gap: 6px; font-size: .9rem; font-weight: 650; }
 input, textarea, select { width: 100%; border: 1px solid #b9c7d2; border-radius: 8px; color: var(--ink); background: white; padding: 10px 12px; }
@@ -54,7 +45,6 @@ input[type=file] { background: var(--back); }
 .primary:hover:enabled { background: #004e40; }
 .secondary, .quiet { background: white; color: var(--ink); border-color: var(--line); }
 .secondary:hover:enabled, .quiet:hover:enabled { background: var(--back); }
-.login-panel .primary { display: flex; justify-content: space-between; align-items: center; }
 .notice, .error, .progress { border-radius: 8px; padding: 10px 12px; font-size: .9rem; background: #e8f5ef; color: #225346; }
 .error, .progress { margin-bottom: 16px; }
 .error { background: #fce7e8; color: #80252e; }
@@ -148,9 +138,7 @@ blockquote { border-left: 3px solid var(--line); padding-left: 10px; margin-top:
 @media (max-width: 750px) {
   .shell { width: calc(100% - 30px); }
   .main { padding-block: 24px; }
-  .login-grid { grid-template-columns: 1fr; }
   .priority-groups { grid-template-columns: 1fr; }
-  .intro { gap: 16px; }
   .workspace-hero { display: grid; justify-items: start; }
   .footer { align-items: start; flex-direction: column; }
   .header-actions { gap: 5px; }
