@@ -67,7 +67,7 @@ export function ApplicationTimeline({ application, refreshVersion }) {
   </section>
 }
 
-export function ResidentInbox({ openApplication }) {
+export function ResidentInbox({ openApplication, renderHeader }) {
   const [open, setOpen] = useState(false)
   const [count, setCount] = useState(null)
   const [items, setItems] = useState(null)
@@ -132,15 +132,15 @@ export function ResidentInbox({ openApplication }) {
     }
   }
 
-  return <section className="resident-inbox stack">
-    <div><button ref={button} className="button secondary" aria-expanded={open} aria-controls="resident-inbox"
+  return <>
+    {renderHeader(<button ref={button} className="button secondary" aria-expanded={open} aria-controls="resident-inbox"
       disabled={busy} onClick={() => {
         if (!open) setItems(null)
         setOpen(!open)
-      }}>Notifications{count > 0 && <> <span className="resident-unread" aria-label={count + ' unread'}>{count}</span></>}</button></div>
-    <div id="resident-inbox" hidden={!open}>
-      {open && <div className="panel stack">
-        <div className="section-title"><h2 ref={heading} tabIndex={-1}>Notifications</h2>
+      }}>Notifications{count > 0 && <> <span className="resident-unread" aria-label={count + ' unread'}>{count}</span></>}</button>)}
+    <div id="resident-inbox" className="resident-inbox" hidden={!open}>
+      {open && <div className="stack">
+        <div className="section-title"><h3 ref={heading} tabIndex={-1}>Notifications</h3>
           <button className="button secondary" disabled={busy} onClick={() => load()}>Refresh notifications</button>
         </div>
         {error && <p className="error" role="alert">{error}</p>}
@@ -163,5 +163,5 @@ export function ResidentInbox({ openApplication }) {
         {cursor && <div><button className="button secondary" disabled={busy} onClick={() => load(cursor)}>Load older notifications</button></div>}
       </div>}
     </div>
-  </section>
+  </>
 }

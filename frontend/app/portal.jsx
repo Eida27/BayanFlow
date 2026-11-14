@@ -443,12 +443,19 @@ export default function Portal({ children }) {
           requestAnimationFrame(() => startButton.current?.focus())
         }} />
       </section>}
-      {user?.role === 'resident' && <ResidentInbox openApplication={id => {
-        residentFocus.current = id
-        refresh()
-      }} />}
       <section className="panel list-panel">
-        <div className="section-title"><h2 ref={residentHeading} tabIndex={-1}>Your applications</h2><button className="button secondary" disabled={busy || applicationsLoading} onClick={refresh}>{applicationsError ? 'Retry' : 'Refresh'}</button></div>
+        <ResidentInbox openApplication={id => {
+          residentFocus.current = id
+          refresh()
+        }} renderHeader={notifications => <div className="section-title resident-applications-heading">
+          <h2 ref={residentHeading} tabIndex={-1}>Your applications</h2>
+          <div className="resident-application-actions">
+            {notifications}
+            <button className="button secondary" disabled={busy || applicationsLoading} onClick={refresh}>
+              {applicationsError ? 'Retry' : 'Refresh'}
+            </button>
+          </div>
+        </div>} />
         {residentNotice && <p className="notice" role="status">{residentNotice}</p>}
         {error && <p className="error" role="alert">{error}</p>}
         {applicationsLoading && <p role="status">{applications === null ? 'Loading applications…' : 'Refreshing applications…'}</p>}
