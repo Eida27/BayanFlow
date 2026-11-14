@@ -265,3 +265,4 @@
 @media (prefers-reduced-motion: reduce) {
   .staff-main .button, .staff-nav a { transition: none; }
 }
+.staff-queue .application summary .staff-review-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }

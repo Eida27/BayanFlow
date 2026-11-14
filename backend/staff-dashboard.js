@@ -1,5 +1,5 @@
 import { reportTimezone } from '../report-dates.js'
-import { manualReviewSql } from './application-filters.js'
+import { manualReviewSql, overdueReviewSql } from './application-filters.js'
 
 export async function loadStaffDashboard(pool) {
   const { rows: [row] } = await pool.query(`
@@ -15,6 +15,9 @@ export async function loadStaffDashboard(pool) {
       SELECT id, title, service, created_at,
              ${manualReviewSql} AS manual
       FROM applications a WHERE status = 'submitted'
+    ), overdue AS (
+      SELECT id, title, service, review_due_at
+      FROM applications a WHERE ${overdueReviewSql}
     ), ranked AS (
       SELECT *, row_number() OVER (PARTITION BY manual ORDER BY created_at, id) AS position
       FROM pending
@@ -30,7 +33,11 @@ export async function loadStaffDashboard(pool) {
               AND created_at >= starts_at AND created_at < ends_at) AS resubmitted,
            (SELECT json_object_agg(status, count) FROM statuses) AS statuses,
            (SELECT summary FROM groups WHERE manual) AS manual_review,
-           (SELECT summary FROM groups WHERE NOT manual) AS awaiting_approval
+           (SELECT summary FROM groups WHERE NOT manual) AS awaiting_approval,
+           (SELECT json_build_object(
+              'count', (SELECT count(*) FROM overdue),
+              'items', coalesce(json_agg(preview ORDER BY review_due_at, id), '[]'::json)
+            ) FROM (SELECT * FROM overdue ORDER BY review_due_at, id LIMIT 5) preview) AS overdue
     FROM bounds
   `, [reportTimezone])
 
@@ -41,5 +48,6 @@ export async function loadStaffDashboard(pool) {
     counts: { submitted: 0, needs_correction: 0, rejected: 0, approved: 0, paid: 0, ...row.statuses },
     manualReview: row.manual_review ?? { count: 0, items: [] },
     awaitingApproval: row.awaiting_approval ?? { count: 0, items: [] },
+    overdue: row.overdue,
   }
 }

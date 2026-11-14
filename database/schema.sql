@@ -143,3 +143,10 @@ BEGIN
                              'tricycle_vehicle', 'tricycle_operator'));
   END IF;
 END $$;
+
+ALTER TABLE applications
+  ADD COLUMN IF NOT EXISTS assigned_staff_id integer REFERENCES accounts(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS review_due_at timestamptz;
+
+UPDATE applications SET review_due_at = statement_timestamp() + interval '72 hours'
+WHERE status = 'submitted' AND review_due_at IS NULL;

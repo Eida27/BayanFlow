@@ -1,6 +1,8 @@
 import { applicationFilters, applicationStatuses } from '../application-filters.js'
 import { reportRange, reportTimezone } from '../report-dates.js'
 
+export const overdueReviewSql = `(a.status = 'submitted' AND a.review_due_at IS NOT NULL AND a.review_due_at <= statement_timestamp())`
+
 // Keep this predicate shared between dashboard counts and queue drill-downs.
 export const manualReviewSql = `(
   (a.ai_error IS NOT NULL AND a.ai_error <> '') OR CASE
@@ -12,7 +14,7 @@ export const manualReviewSql = `(
   END
 )`
 
-export function applicationListFilter({ filter, date }, values, fail) {
+export function applicationListFilter({ filter, date }, values, fail, staffId) {
   if (typeof filter !== 'string' || !Object.hasOwn(applicationFilters, filter)) {
     fail(400, 'Choose a supported application filter.')
   }
@@ -39,6 +41,12 @@ export function applicationListFilter({ filter, date }, values, fail) {
     }
   }
   if (date !== undefined) fail(400, 'This application filter does not accept a date.')
+  if (filter === 'overdue') return { predicate: overdueReviewSql, order: 'a.review_due_at ASC, a.id ASC' }
+  if (filter === 'unassigned') return { predicate: "a.status = 'submitted' AND a.assigned_staff_id IS NULL" }
+  if (filter === 'assigned-to-me') {
+    values.push(staffId)
+    return { predicate: "a.status = 'submitted' AND a.assigned_staff_id = $2" }
+  }
   if (Object.hasOwn(applicationStatuses, filter)) {
     values.push(filter)
     return { predicate: 'a.status = $2' }

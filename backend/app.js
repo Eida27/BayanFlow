@@ -11,7 +11,7 @@ import { amount } from './payment.js'
 import { decisionAllowed } from './workflow.js'
 import { needsManualReview } from '../review-findings.js'
 import { loadStaffDashboard } from './staff-dashboard.js'
-import { applicationListFilter } from './application-filters.js'
+import { applicationListFilter, overdueReviewSql } from './application-filters.js'
 import { recordStaffNotification, registerStaffNotifications } from './staff-notifications.js'
 import { recordApplicationEvent, registerResidentNotifications } from './resident-notifications.js'
 import { reportRange } from '../report-dates.js'
@@ -143,18 +143,21 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
     const filtered = req.query.filter !== undefined || req.query.date !== undefined
     if (filtered) role(req, 'staff')
     const values = [req.user.role === 'resident' ? req.user.id : null]
-    const filter = filtered ? applicationListFilter(req.query, values, fail) : {}
+    const filter = filtered ? applicationListFilter(req.query, values, fail, req.user.id) : {}
+    const staff = req.user.role === 'staff'
     const { rows } = await pool.query(
       `SELECT a.id, a.title, a.service, a.address, a.purpose, a.vehicle_identifier, a.status, a.revision, a.findings, a.ai_error, a.decision_note, a.created_at,
               p.payer, p.tx_hash, CASE WHEN a.status = 'paid' THEN p.reference_id END AS receipt_ref,
               (a.status = 'paid' AND p.tx_hash IS NOT NULL AND p.confirmed_at IS NOT NULL) AS certificate_available,
               ARRAY(SELECT d.requirement FROM documents d WHERE d.application_id = a.id AND d.revision = a.revision) AS uploaded_documents
               ${filter.select ?? ''}
+              ${staff ? `, a.assigned_staff_id, reviewer.email AS assigned_staff_email, a.review_due_at, ${overdueReviewSql} AS review_overdue` : ''}
          FROM applications a LEFT JOIN payments p ON p.application_id = a.id
+         ${staff ? 'LEFT JOIN accounts reviewer ON reviewer.id = a.assigned_staff_id' : ''}
          ${filter.join ?? ''}
         WHERE ($1::integer IS NULL OR a.resident_id = $1)
           ${filtered ? 'AND ' + filter.predicate : ''}
-        ORDER BY ${filtered ? 'a.created_at ASC, a.id ASC' : 'a.created_at DESC'}`, values)
+        ORDER BY ${filter.order ?? (filtered ? 'a.created_at ASC, a.id ASC' : 'a.created_at DESC')}`, values)
     res.json({ applications: rows })
   })
 
@@ -174,6 +177,11 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
   api.get('/staff/dashboard', async (req, res) => {
     role(req, 'staff')
     res.json(await loadStaffDashboard(pool))
+  })
+  api.get('/staff/reviewers', async (req, res) => {
+    role(req, 'staff')
+    const { rows: reviewers } = await pool.query("SELECT id, email FROM accounts WHERE role = 'staff' ORDER BY email")
+    res.json({ reviewers })
   })
   api.get('/staff/reports', async (req, res) => res.json(await staffReport(req)))
   api.get('/staff/reports/pdf', async (req, res) => {
@@ -221,12 +229,13 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
         number = current.revision + 1
         await db.query(
           `UPDATE applications SET title=$2, status='submitted', revision=$3, findings=$4, ai_error=$5,
-           decision_note=NULL, address=$6, purpose=$7, vehicle_identifier=$8 WHERE id=$1`,
+           decision_note=NULL, address=$6, purpose=$7, vehicle_identifier=$8,
+           review_due_at=statement_timestamp() + interval '72 hours' WHERE id=$1`,
           [id, title, number, JSON.stringify(result.findings), result.error, address, purpose, vehicleIdentifier])
       } else {
         await db.query(
-          `INSERT INTO applications (id,resident_id,title,status,findings,ai_error,service,address,purpose,vehicle_identifier)
-           VALUES ($1,$2,$3,'submitted',$4,$5,$6,$7,$8,$9)`,
+          `INSERT INTO applications (id,resident_id,title,status,findings,ai_error,service,address,purpose,vehicle_identifier,review_due_at)
+           VALUES ($1,$2,$3,'submitted',$4,$5,$6,$7,$8,$9,statement_timestamp() + interval '72 hours')`,
           [id, req.user.id, title, JSON.stringify(result.findings), result.error, service, address, purpose, vehicleIdentifier])
       }
       for (const [name, file] of Object.entries(files)) {
@@ -304,6 +313,24 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
         await db.query('INSERT INTO payments (application_id,reference_id,amount) VALUES ($1,$2,$3)',
           [application.id, `0x${randomBytes(32).toString('hex')}`, amount.toString()])
       }
+    })
+    res.json({ ok: true })
+  })
+
+  api.post('/applications/:id/assignment', async (req, res) => {
+    role(req, 'staff')
+    const { assigneeId } = req.body ?? {}
+    if (assigneeId !== null && (!Number.isInteger(assigneeId) || assigneeId < 1 || assigneeId > 2147483647)) {
+      fail(400, 'Choose a staff reviewer or clear the assignment.')
+    }
+    await transaction(pool, async db => {
+      const application = await ownedApplication(db, req, true)
+      if (application.status !== 'submitted') fail(409, 'This application is no longer pending review.')
+      if (assigneeId !== null) {
+        const { rowCount } = await db.query("SELECT id FROM accounts WHERE id=$1 AND role='staff' FOR SHARE", [assigneeId])
+        if (!rowCount) fail(400, 'Choose a valid staff reviewer.')
+      }
+      await db.query('UPDATE applications SET assigned_staff_id=$2 WHERE id=$1', [application.id, assigneeId])
     })
     res.json({ ok: true })
   })

@@ -4,6 +4,7 @@ import { BUSINESS_PERMIT, services } from '../../services.js'
 import { applicationFilterQuery, applicationStatuses } from '../../application-filters.js'
 import { api } from './shared'
 import { useVisibleRefresh } from './use-visible-refresh'
+import { ReviewDeadline } from './staff-assignment'
 
 export const applicationAnchor = id => `application-${id}`
 
@@ -45,6 +46,7 @@ function PriorityGroup({ filter, title, group: { count, items }, emptyMessage })
           <Link href={`/staff/applications#${applicationAnchor(application.id)}`}>
             <strong>{application.title}</strong>
             <small>{services[application.service ?? BUSINESS_PERMIT].label}</small>
+            {application.review_due_at && <small>Due <ReviewDeadline dueAt={application.review_due_at} /></small>}
           </Link>
         </li>
       )}
@@ -97,6 +99,7 @@ export default function StaffDashboard() {
       <div className="priority-groups">
         <PriorityGroup filter="manual-review" title="Needs manual document review" group={summary.manualReview} emptyMessage="No applications need manual document review." />
         <PriorityGroup filter="awaiting-approval" title="Awaiting approval" group={summary.awaitingApproval} emptyMessage="No applications are awaiting approval." />
+        <PriorityGroup filter="overdue" title="Overdue reviews" group={summary.overdue} emptyMessage="No reviews are overdue." />
       </div>
       <h3>Current application statuses</h3>
       <div className="status-totals">

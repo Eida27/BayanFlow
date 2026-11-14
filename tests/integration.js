@@ -41,7 +41,11 @@ test('municipal applications from submission through retried receipt confirmatio
   await db.query("INSERT INTO documents VALUES ($1, 1, 'supporting', $2)", [legacyClearanceId, legacyPdf])
   await db.query(preTricycle)
   await db.query(setup)
+  const legacyDue = async () => (await db.query('SELECT review_due_at FROM applications WHERE id=$1', [legacyClearanceId])).rows[0].review_due_at
+  const migratedDue = await legacyDue()
+  assert.ok(Date.parse(migratedDue) > Date.now() + 71 * 3600_000)
   await db.query(setup)
+  assert.deepEqual(await legacyDue(), migratedDue)
   const hash = `0x${'33'.repeat(32)}`
   const clearanceHash = `0x${'55'.repeat(32)}`
   const zoningHash = `0x${'88'.repeat(32)}`
@@ -134,9 +138,34 @@ test('municipal applications from submission through retried receipt confirmatio
   const { id } = await submission.json()
   const path = `/applications/${id}`
   const businessPermit = cookie => request(path + '/certificate', { cookie })
+  const reviewer = (await (await request('/staff/reviewers', { cookie: staff })).json()).reviewers[0]
+  const { rows: [secondReviewer] } = await db.query(
+    "INSERT INTO accounts (email,password_hash,role) VALUES ('assignment-reviewer', $1, 'staff') RETURNING id", [hashPassword('demo')])
+  const staffApplications = async (filter = '', cookie = staff) =>
+    (await (await request('/applications' + (filter ? '?filter=' + filter : ''), { cookie })).json()).applications
+  const assign = (assigneeId, cookie = staff) => request(path + '/assignment', { cookie, body: { assigneeId } })
+  const initial = (await staffApplications()).find(item => item.id === id)
+  assert.ok(Math.abs(Date.parse(initial.review_due_at) - Date.parse(initial.created_at) - 72 * 3600_000) < 1000)
+  assert.equal((await assign(reviewer.id, resident)).status, 403)
+  assert.equal((await assign(2147483647)).status, 400)
+  assert.equal((await assign(reviewer.id)).status, 200)
+  assert.ok((await staffApplications('assigned-to-me')).some(item => item.id === id))
+  assert.equal((await assign(secondReviewer.id)).status, 200)
+  assert.ok((await staffApplications('assigned-to-me', await login('assignment-reviewer'))).some(item => item.id === id))
+  assert.equal((await assign(null)).status, 200)
+  assert.ok((await staffApplications('unassigned')).some(item => item.id === id))
+  assert.equal((await assign(secondReviewer.id)).status, 200)
+  assert.equal((await staffApplications()).find(item => item.id === id).review_due_at, initial.review_due_at)
+  await db.query('UPDATE applications SET review_due_at=statement_timestamp() WHERE id=$1', [id])
+  const overdue = await staffApplications('overdue')
+  assert.ok(overdue.some(item => item.id === id && item.review_overdue))
+  const overdueDashboard = (await (await request('/staff/dashboard', { cookie: staff })).json()).overdue
+  assert.equal(overdueDashboard.count, overdue.length)
+  assert.equal(overdueDashboard.items[0].id, id)
   assert.equal((await businessPermit(resident)).status, 404)
   assert.equal((await request(`/applications/${legacyId}/certificate`, { cookie: resident })).status, 200)
   const { applications } = await (await request('/applications', { cookie: resident })).json()
+  assert.ok(applications.every(application => !Object.hasOwn(application, 'review_due_at') && !Object.hasOwn(application, 'assigned_staff_id')))
   assert.equal(applications.find(application => application.id === legacyId).service, 'business_permit')
   assert.match(applications[0].ai_error, /Staff can review/)
   assert.equal((await request(path + '/documents/premises', { cookie: other })).status, 404)
@@ -146,7 +175,13 @@ test('municipal applications from submission through retried receipt confirmatio
   })
   assert.equal((await decision(resident, 'approved')).status, 403)
   assert.equal((await decision(staff, 'needs_correction')).status, 200)
+  assert.equal((await assign(null)).status, 409)
+  assert.ok(!(await staffApplications('overdue')).some(item => item.id === id))
   assert.equal((await request(path + '/revision', { cookie: resident, body: await form(true) })).status, 200)
+  const revised = (await staffApplications()).find(item => item.id === id)
+  assert.equal(revised.assigned_staff_id, secondReviewer.id)
+  assert.equal(revised.review_overdue, false)
+  assert.ok(Date.parse(revised.review_due_at) > Date.now() + 71 * 3600_000)
   const original = await request(path + '/documents/premises?revision=1', { cookie: staff })
   assert.equal(original.status, 200)
   assert.doesNotMatch(await original.text(), /Intended use:/)
@@ -268,7 +303,13 @@ test('municipal applications from submission through retried receipt confirmatio
   const rejected = await submitClearance(clearanceForm())
   const rejectedId = (await rejected.json()).id
   const rejectedPath = '/applications/' + rejectedId
-  assert.equal((await review(rejectedPath, 'rejected', 1)).status, 200)
+  const [rejection, concurrentAssignment] = await Promise.all([
+    review(rejectedPath, 'rejected', 1),
+    request(rejectedPath + '/assignment', { cookie: staff, body: { assigneeId: reviewer.id } }),
+  ])
+  assert.equal(rejection.status, 200)
+  assert.ok([200, 409].includes(concurrentAssignment.status))
+  assert.equal((await request(rejectedPath + '/assignment', { cookie: staff, body: { assigneeId: null } })).status, 409)
   assert.equal((await (await timeline(rejectedId)).json()).events.at(-1).kind, 'rejected')
   assert.equal((await (await inbox()).json()).items[0].kind, 'rejected')
   assert.equal((await request(rejectedPath + '/authorize', { cookie: resident, body: { payer } })).status, 409)

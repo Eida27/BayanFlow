@@ -86,6 +86,8 @@ Run `pnpm db:setup` before starting the updated API. The resident portal records
 
 ## Checks
 
+Run `pnpm db:setup` before starting an updated checkout to add staff assignments and review deadlines. Existing pending reviews get a fresh 72-hour window. Staff can assign reviews in the application queue and find overdue reviews on the dashboard.
+
 - `pnpm test` exercises the fictional checklist, PDF fixtures, and staff transitions.
 - `pnpm test:integration` uses PostgreSQL and a simulated chain gateway. Set `TEST_DATABASE_URL` to a disposable database with schema creation privileges. The test creates and drops an isolated schema.
 - `pnpm build` builds the Next.js app.

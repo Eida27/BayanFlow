@@ -9,6 +9,7 @@ import { api, Header, Footer, explorer } from './shared'
 import StaffDashboard, { applicationAnchor, openApplicationCard, openLinkedApplication } from './staff-dashboard'
 import { applicationFilters } from '../../application-filters.js'
 import StaffReports from './staff-reports'
+import StaffAssignment, { ReviewDeadline } from './staff-assignment'
 import { StaffNotifications, StaffSettings } from './staff-notifications'
 import { useVisibleRefresh } from './use-visible-refresh'
 import StaffShell, { StaffIcon } from './staff-shell'
@@ -180,7 +181,7 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
   </div>
 }
 
-function ApplicationCard({ application, staff, timelineVersion, ...props }) {
+function ApplicationCard({ application, staff, timelineVersion, refreshAssignment, ...props }) {
   const [pending, setPending] = useState('')
   const [expanded, setExpanded] = useState(false)
   useEffect(() => {
@@ -196,11 +197,20 @@ function ApplicationCard({ application, staff, timelineVersion, ...props }) {
     paid: 'Open your payment receipt',
   }
   return <details className="application" id={applicationAnchor(application.id)}
-    onToggle={staff ? undefined : event => {
+    onToggle={event => {
       if (event.target === event.currentTarget) setExpanded(event.currentTarget.open)
     }}>
     <summary><div><h3>{application.title}</h3><small>{services[application.service ?? BUSINESS_PERMIT].label}{application.created_at && ` · ${new Date(application.created_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeZone: reportTimezone })}`}</small>
-      {!staff && <span className="resident-next-step">{nextStep[application.status]}</span>}</div><span className={`status ${application.status}`}>{statuses[application.status]}</span></summary>
+      {!staff && <span className="resident-next-step">{nextStep[application.status]}</span>}
+      {staff && application.status === 'submitted' && <small className="staff-review-meta">
+        <span>{application.assigned_staff_email ?? 'Unassigned'}</span>
+        {application.review_due_at && <span>Due <ReviewDeadline dueAt={application.review_due_at} /></span>}
+        {application.review_overdue && <span className="status needs_correction">Overdue</span>}
+      </small>}</div><span className={`status ${application.status}`}>{statuses[application.status]}</span></summary>
+    {staff && expanded && application.status === 'submitted' && <div className="details">
+      <StaffAssignment key={application.assigned_staff_id ?? 'unassigned'} application={application}
+        refreshQueue={refreshAssignment} busy={props.busy} />
+    </div>}
     <Details application={application} staff={staff} pending={pending} setPending={setPending} {...props} />
     {!staff && expanded && <ApplicationTimeline application={application} refreshVersion={timelineVersion} />}
   </details>
@@ -503,12 +513,12 @@ function StaffQueue({ query, queueFilter, initialSearch }) {
   }, [applications])
 
   useEffect(() => {
-    if (busy || nextFocus.current === null) return
+    if (busy || loading || nextFocus.current === null) return
     const target = nextFocus.current
     nextFocus.current = null
-    if (target) openApplicationCard(applicationAnchor(target))
+    if (target && applications?.some(item => item.id === target)) openApplicationCard(applicationAnchor(target))
     else queueHeading.current?.focus()
-  }, [applications, busy])
+  }, [applications, busy, loading])
 
   function refresh() {
     setError('')
@@ -600,7 +610,11 @@ function StaffQueue({ query, queueFilter, initialSearch }) {
       {loading && <StaffLoading>Loading applications…</StaffLoading>}
       {!visibleApplications ? (!loading && <p>Applications are unavailable.</p>)
         : visibleApplications.length ? visibleApplications.map(application => <ApplicationCard key={application.id}
-          application={application} staff decide={decide} busy={busy || loading} />)
+          application={application} staff decide={decide} busy={busy || loading} refreshAssignment={id => {
+            if (['assigned-to-me', 'unassigned'].includes(queueFilter?.filter)) nextFocus.current = id
+            setDecisionNotice('Assignment saved.')
+            refresh()
+          }} />)
         : <div className="empty"><h3>{search.trim() || queueFilter ? 'No matching applications' : 'No applications yet'}</h3>
           <p>{search.trim() ? 'Try another title or service name.' : queueFilter ? 'Choose another filter to see more applications.' : 'Submitted applications will appear here.'}</p>
         </div>}

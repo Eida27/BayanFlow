@@ -12,6 +12,9 @@ export const applicationFilters = {
   'awaiting-approval': 'Awaiting approval',
   'new-today': 'New applications',
   resubmissions: 'Resubmissions',
+  'assigned-to-me': 'Assigned to me',
+  unassigned: 'Unassigned',
+  overdue: 'Overdue',
 }
 
 export function applicationFilterQuery(filter, date) {
