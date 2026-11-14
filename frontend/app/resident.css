@@ -105,3 +105,13 @@
 @media (prefers-reduced-motion: reduce) {
   .resident-site .button { transition: none; }
 }
+.resident-inbox ul, .resident-timeline ol { list-style: none; margin: 0; padding: 0; }
+.resident-inbox li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 14px; border-top: 1px solid var(--line); }
+.resident-inbox li > div { min-width: 0; overflow-wrap: anywhere; }
+.resident-inbox li p { margin-block: 4px; }
+.resident-unread { display: inline-block; margin-inline-start: 8px; padding: 2px 8px; border-radius: 12px; background: var(--resident-tint); color: var(--dark-green); font-size: .85rem; }
+.resident-timeline { margin: 0 14px 14px; padding: clamp(14px, 3vw, 24px); border: 1px solid var(--line); border-radius: 12px; overflow-wrap: anywhere; }
+.resident-timeline li { display: grid; gap: 4px; padding: 0 0 14px 14px; border-inline-start: 2px solid var(--line); }
+.resident-timeline li:last-child { padding-bottom: 0; }
+.resident-timeline small, .resident-inbox small { color: var(--muted); }
+.resident-timeline summary { cursor: pointer; }

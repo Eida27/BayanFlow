@@ -13,6 +13,7 @@ import { StaffNotifications, StaffSettings } from './staff-notifications'
 import { useVisibleRefresh } from './use-visible-refresh'
 import StaffShell, { StaffIcon } from './staff-shell'
 import ResidentApplication from './resident-application'
+import { ApplicationTimeline, ResidentInbox } from './resident-activity'
 import SignIn from './sign-in'
 import { reportRange, reportTimezone } from '../../report-dates.js'
 import { BUSINESS_PERMIT, TRICYCLE_PERMIT, ZONING_CLEARANCE, services } from '../../services.js'
@@ -171,8 +172,9 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
   </div>
 }
 
-function ApplicationCard({ application, staff, ...props }) {
+function ApplicationCard({ application, staff, timelineVersion, ...props }) {
   const [pending, setPending] = useState('')
+  const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     if (staff) return
     const hash = localStorage.getItem(paymentKey(application.id))
@@ -185,10 +187,14 @@ function ApplicationCard({ application, staff, ...props }) {
     rejected: 'Read the staff decision',
     paid: 'Open your payment receipt',
   }
-  return <details className="application" id={applicationAnchor(application.id)}>
+  return <details className="application" id={applicationAnchor(application.id)}
+    onToggle={staff ? undefined : event => {
+      if (event.target === event.currentTarget) setExpanded(event.currentTarget.open)
+    }}>
     <summary><div><h3>{application.title}</h3><small>{services[application.service ?? BUSINESS_PERMIT].label}{application.created_at && ` · ${new Date(application.created_at).toLocaleDateString('en-PH', { dateStyle: 'medium', timeZone: reportTimezone })}`}</small>
       {!staff && <span className="resident-next-step">{nextStep[application.status]}</span>}</div><span className={`status ${application.status}`}>{statuses[application.status]}</span></summary>
     <Details application={application} staff={staff} pending={pending} setPending={setPending} {...props} />
+    {!staff && expanded && <ApplicationTimeline application={application} refreshVersion={timelineVersion} />}
   </details>
 }
 
@@ -236,6 +242,7 @@ export default function Portal({ children }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [applications, setApplications] = useState(null)
+  const [timelineVersion, setTimelineVersion] = useState(0)
   const [applicationsLoading, setApplicationsLoading] = useState(true)
   const [applicationsError, setApplicationsError] = useState('')
   const applicationsRequest = useRef(0)
@@ -299,7 +306,10 @@ export default function Portal({ children }) {
     setApplicationsError('')
     try {
       const { applications } = await api('/applications')
-      if (request === applicationsRequest.current) setApplications(applications)
+      if (request === applicationsRequest.current) {
+        setApplications(applications)
+        setTimelineVersion(version => version + 1)
+      }
     } catch (error) {
       if (request === applicationsRequest.current) setApplicationsError(error.message)
     } finally {
@@ -411,6 +421,10 @@ export default function Portal({ children }) {
           requestAnimationFrame(() => startButton.current?.focus())
         }} />
       </section>}
+      {user?.role === 'resident' && <ResidentInbox openApplication={id => {
+        residentFocus.current = id
+        refresh()
+      }} />}
       <section className="panel list-panel">
         <div className="section-title"><h2 ref={residentHeading} tabIndex={-1}>Your applications</h2><button className="button secondary" disabled={busy || applicationsLoading} onClick={refresh}>{applicationsError ? 'Retry' : 'Refresh'}</button></div>
         {residentNotice && <p className="notice" role="status">{residentNotice}</p>}
@@ -418,7 +432,7 @@ export default function Portal({ children }) {
         {applicationsLoading && <p role="status">{applications === null ? 'Loading applications…' : 'Refreshing applications…'}</p>}
         {applicationsError && <p className="error" role="alert">{residentFocus.current ? 'Your application was saved. Retry to see its latest status.' : applicationsError}</p>}
         {applications === null ? null : applications.length ? applications.map(application => <ApplicationCard key={application.id}
-          application={application} run={run} busy={busy} submitApplication={submitApplication} />)
+          application={application} run={run} busy={busy} submitApplication={submitApplication} timelineVersion={timelineVersion} />)
           : <div className="empty"><StaffIcon name="applications" /><h3>No applications yet</h3><p>Your submitted applications will appear here.</p>
             {!showForm && <button className="button secondary" disabled={busy} onClick={() => setShowForm(true)}>Choose a service</button>}</div>}
       </section>

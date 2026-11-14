@@ -73,6 +73,10 @@ After confirming payment, download the demo PDF from the resident application. A
 
 For phone scans, set `PUBLIC_WEB_ORIGIN` in the root `.env` to the frontend origin reachable from the phone, such as `http://192.168.1.20:3000` with your computer's actual LAN address or the HTTPS origin of a hosted demo. Restart the API and download a fresh PDF. To test over Wi-Fi, use two terminals and run `pnpm api` and `pnpm exec next dev frontend --hostname 0.0.0.0` on a trusted network. The phone can scan and verify without signing in. Use localhost on the computer to sign in and download the PDF.
 
+## Resident activity
+
+Run `pnpm db:setup` before starting the updated API. The resident portal records new application activity from that point forward. Open an application to see its timeline, or use **Notifications** to find staff decisions and newly issued demo documents.
+
 ## Checks
 
 - `pnpm test` exercises the fictional checklist, PDF fixtures, and staff transitions.

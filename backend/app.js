@@ -13,6 +13,7 @@ import { needsManualReview } from '../review-findings.js'
 import { loadStaffDashboard } from './staff-dashboard.js'
 import { applicationListFilter } from './application-filters.js'
 import { recordStaffNotification, registerStaffNotifications } from './staff-notifications.js'
+import { recordApplicationEvent, registerResidentNotifications } from './resident-notifications.js'
 import { reportRange } from '../report-dates.js'
 import { loadReport, reportPdf } from './reports.js'
 
@@ -115,6 +116,7 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
 
   api.get('/me', (req, res) => res.json({ user: req.user ?? null }))
   registerStaffNotifications(api, pool, role, fail)
+  registerResidentNotifications(api, pool, role, fail)
   api.post('/login', async (req, res) => {
     const { email, password } = req.body ?? {}
     if (typeof email !== 'string' || email.length > 254 || typeof password !== 'string' || password.length > 128) {
@@ -230,6 +232,8 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
       for (const [name, file] of Object.entries(files)) {
         await db.query('INSERT INTO documents VALUES ($1,$2,$3,$4)', [id, number, name, file.buffer])
       }
+      await recordApplicationEvent(db, id, number, previous ? 'resubmitted' : 'submitted')
+      await recordApplicationEvent(db, id, number, 'ai_review', { findings: result.findings, error: result.error })
       await recordStaffNotification(db, {
         id, kind: previous ? 'resubmission' : 'submission', revision: number, title, service,
         manualReview: needsManualReview({ findings: result.findings, ai_error: result.error }),
@@ -240,6 +244,15 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
 
   api.post('/applications', residentOnly, upload, submit)
   api.post('/applications/:id/revision', residentOnly, upload, submit)
+  api.get('/applications/:id/timeline', async (req, res) => {
+    role(req, 'resident')
+    const application = await ownedApplication(pool, req)
+    const { rows: events } = await pool.query(`
+      SELECT id::text, revision, kind, created_at, details
+      FROM application_events WHERE application_id=$1 ORDER BY created_at, id
+    `, [application.id])
+    res.json({ events })
+  })
   api.get('/applications/:id/certificate', async (req, res) => {
     role(req, 'resident')
     const application = await ownedApplication(pool, req)
@@ -286,6 +299,7 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
         'INSERT INTO decisions (application_id,revision,reviewer_id,status,note) VALUES ($1,$2,$3,$4,$5)',
         [application.id, application.revision, req.user.id, status, note.trim()])
       await db.query('UPDATE applications SET status=$2, decision_note=$3 WHERE id=$1', [application.id, status, note.trim()])
+      await recordApplicationEvent(db, application.id, application.revision, status, { note: note.trim() })
       if (status === 'approved') {
         await db.query('INSERT INTO payments (application_id,reference_id,amount) VALUES ($1,$2,$3)',
           [application.id, `0x${randomBytes(32).toString('hex')}`, amount.toString()])
@@ -335,6 +349,8 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
       if (current.status !== 'approved') fail(409, 'The application is not ready for payment.')
       await db.query('UPDATE payments SET tx_hash=$2, confirmed_at=now() WHERE application_id=$1', [current.id, verifiedHash])
       await db.query("UPDATE applications SET status='paid' WHERE id=$1", [current.id])
+      await recordApplicationEvent(db, current.id, current.revision, 'payment_confirmed')
+      await recordApplicationEvent(db, current.id, current.revision, 'document_issued')
       await recordStaffNotification(db, { ...current, kind: 'payment', revision: 1 })
       return verifiedHash
     })

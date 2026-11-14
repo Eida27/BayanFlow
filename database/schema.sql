@@ -59,6 +59,17 @@ CREATE TABLE IF NOT EXISTS staff_notifications (
   UNIQUE (application_id, kind, revision)
 );
 
+CREATE TABLE IF NOT EXISTS application_events (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  application_id uuid NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  revision integer NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('submitted', 'resubmitted', 'ai_review', 'needs_correction', 'approved', 'rejected', 'payment_confirmed', 'document_issued')),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  details jsonb NOT NULL DEFAULT '{}',
+  read_at timestamptz,
+  UNIQUE (application_id, revision, kind)
+);
+
 CREATE TABLE IF NOT EXISTS staff_notification_reads (
   account_id integer REFERENCES accounts(id) ON DELETE CASCADE,
   notification_id bigint REFERENCES staff_notifications(id) ON DELETE CASCADE,

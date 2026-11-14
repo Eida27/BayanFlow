@@ -94,6 +94,14 @@ test('municipal applications from submission through retried receipt confirmatio
   }
 
   const [resident, staff, other] = await Promise.all(['resident', 'staff', 'other'].map(login))
+  const timeline = (id, cookie = resident) => request('/applications/' + id + '/timeline', { cookie })
+  const inbox = (cookie = resident, query = '') => request('/resident/notifications' + query, { cookie })
+  assert.deepEqual(await (await timeline(legacyId)).json(), { events: [] })
+  assert.equal((await timeline(legacyId, other)).status, 404)
+  assert.equal((await timeline(legacyId, staff)).status, 403)
+  assert.equal((await timeline(legacyId, '')).status, 401)
+  assert.equal((await inbox(staff)).status, 403)
+  assert.equal((await inbox('')).status, 401)
   assert.equal((await request('/staff/dashboard')).status, 401)
   assert.equal((await request('/staff/dashboard', { cookie: resident })).status, 403)
   const dashboard = await request('/staff/dashboard', { cookie: staff })
@@ -159,6 +167,21 @@ test('municipal applications from submission through retried receipt confirmatio
   assert.equal((await request(path + '/confirm', { cookie: resident, body: {} })).status, 200)
   assert.equal((await request(path + '/confirm', { cookie: resident, body: { hash } })).status, 200)
   assert.equal(verifications, 2)
+  const { events } = await (await timeline(id)).json()
+  assert.deepEqual(events.map(event => [event.kind, event.revision]), [
+    ['submitted', 1], ['ai_review', 1], ['needs_correction', 1],
+    ['resubmitted', 2], ['ai_review', 2], ['approved', 2], ['payment_confirmed', 2], ['document_issued', 2],
+  ])
+  assert.match(events[1].details.error, /Staff can review/)
+  assert.equal(events[2].details.note, 'Fictional staff review')
+  const feed = await (await inbox()).json()
+  assert.equal(feed.unreadCount, 3)
+  assert.deepEqual(feed.items.map(item => item.kind), ['document_issued', 'approved', 'needs_correction'])
+  const markPath = '/resident/notifications/' + feed.items[0].id + '/read'
+  assert.equal((await request(markPath, { cookie: other, body: {} })).status, 404)
+  assert.deepEqual(await (await inbox(other)).json(), { items: [], nextCursor: null, unreadCount: 0 })
+  assert.deepEqual(await (await request(markPath, { cookie: resident, body: {} })).json(), { unreadCount: 2 })
+  assert.equal((await (await inbox(await login('resident'))).json()).items[0].read, true)
   const receipt = await (await request('/receipts/' + referenceId)).json()
   assert.deepEqual(receipt, { referenceId, hash, amount: '1000000000000000', chainId: 97, contract })
   await db.query('UPDATE payments SET confirmed_at = $2 WHERE application_id = $1', [id, null])
@@ -185,6 +208,7 @@ test('municipal applications from submission through retried receipt confirmatio
   assert.match(businessPermitText, /Scan to verify/)
   assert.match(businessPermitText, /Issued on\s+November 15, 2026/)
   assert.match(businessPermitText, /DEMO ONLY — NOT AN OFFICIAL MUNICIPAL DOCUMENT/)
+  assert.deepEqual(await (await timeline(id)).json(), { events })
   assert.equal((await businessPermit(other)).status, 404)
   assert.equal((await businessPermit(staff)).status, 403)
 
@@ -242,9 +266,17 @@ test('municipal applications from submission through retried receipt confirmatio
   assert.deepEqual(await (await request('/receipts/' + payment.referenceId)).json(),
     { referenceId: payment.referenceId, hash: clearanceHash, amount: '1000000000000000', chainId: 97, contract })
   const rejected = await submitClearance(clearanceForm())
-  const rejectedPath = '/applications/' + (await rejected.json()).id
+  const rejectedId = (await rejected.json()).id
+  const rejectedPath = '/applications/' + rejectedId
   assert.equal((await review(rejectedPath, 'rejected', 1)).status, 200)
+  assert.equal((await (await timeline(rejectedId)).json()).events.at(-1).kind, 'rejected')
+  assert.equal((await (await inbox()).json()).items[0].kind, 'rejected')
   assert.equal((await request(rejectedPath + '/authorize', { cookie: resident, body: { payer } })).status, 409)
+  await db.query('DELETE FROM documents WHERE application_id=$1', [rejectedId])
+  await db.query('DELETE FROM decisions WHERE application_id=$1', [rejectedId])
+  await db.query('DELETE FROM applications WHERE id=$1', [rejectedId])
+  assert.equal((await db.query('SELECT 1 FROM application_events WHERE application_id=$1', [rejectedId])).rowCount, 0)
+  assert.ok((await (await inbox()).json()).items.every(item => item.application_id !== rejectedId))
 
   const zoningForm = async (attachments = {}) => {
     const body = new FormData()
@@ -334,6 +366,8 @@ test('municipal applications from submission through retried receipt confirmatio
   reviewSucceeds = true
   assert.equal((await request(tricyclePath + '/revision', { cookie: resident, body: fixed })).status, 200)
   reviewSucceeds = false
+  const successfulReview = (await (await timeline(tricycleId)).json()).events.filter(event => event.kind === 'ai_review').at(-1)
+  assert.ok(successfulReview.details.findings.length)
   const afterRevision = await (await request('/staff/dashboard', { cookie: staff })).json()
   assert.equal(afterRevision.activity.resubmitted, beforeRevision.activity.resubmitted + 1)
   assert.ok(afterRevision.awaitingApproval.items.some(item => item.id === tricycleId))
