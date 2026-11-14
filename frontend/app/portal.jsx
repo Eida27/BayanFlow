@@ -208,7 +208,7 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
       {pending && <button className="button secondary" disabled={busy} onClick={() => runPayment(() => verifyPayment())}>Search for a matching payment</button>}
     </section>}
     {application.status === 'paid' && <div className="document-links">
-      {!staff && clearance && <a href={`/api${base}/certificate`} download>{tricycle ? 'Download demo tricycle permit PDF' : zoning ? 'Download demo zoning clearance PDF' : 'Download demo clearance PDF'}</a>}
+      {!staff && application.certificate_available && <a href={`/api${base}/certificate`} download>{tricycle ? 'Download demo tricycle permit PDF' : zoning ? 'Download demo zoning clearance PDF' : clearance ? 'Download demo clearance PDF' : 'Download demo business permit PDF'}</a>}
       {application.receipt_ref && <Link href={'/receipts/' + application.receipt_ref}>Open public receipt ↗</Link>}
       {application.tx_hash && <a href={explorer + application.tx_hash} target="_blank" rel="noreferrer">View on BscScan ↗</a>}
     </div>}

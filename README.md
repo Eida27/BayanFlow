@@ -67,6 +67,12 @@ Run `pnpm db:setup` after updating an existing BayanFlow checkout to add the new
 4. Connect MetaMask, confirm the testnet payment, and open the receipt. If you reload before confirmation, use the payment recovery control. The API can look up a recent matching on-chain payment by reference. The wallet's activity provides the transaction hash for older payments.
 5. Open the transaction in Testnet BscScan. Add that transaction link and the verified contract address to the pitch deck before presenting.
 
+## Verify an issued demo document
+
+After confirming payment, download the demo PDF from the resident application. All four services include a verification QR code, including previously paid applications when you download the PDF again. Compare the verification ID, service, and issue date with the public page. Use its BscScan Testnet link to inspect the recorded payment.
+
+For phone scans, set `PUBLIC_WEB_ORIGIN` in the root `.env` to the frontend origin reachable from the phone, such as `http://192.168.1.20:3000` with your computer's actual LAN address or the HTTPS origin of a hosted demo. Restart the API and download a fresh PDF. To test over Wi-Fi, use two terminals and run `pnpm api` and `pnpm exec next dev frontend --hostname 0.0.0.0` on a trusted network. The phone can scan and verify without signing in. Use localhost on the computer to sign in and download the PDF.
+
 ## Checks
 
 - `pnpm test` exercises the fictional checklist, PDF fixtures, and staff transitions.

@@ -32,6 +32,7 @@ const checklists = {
   [TRICYCLE_PERMIT]: tricycleChecklist,
 }
 const certificateFiles = {
+  [BUSINESS_PERMIT]: 'bayanflow-demo-business-permit.pdf',
   [MAYORS_CLEARANCE]: 'bayanflow-demo-clearance.pdf',
   [ZONING_CLEARANCE]: 'bayanflow-demo-zoning-clearance.pdf',
   [TRICYCLE_PERMIT]: 'bayanflow-demo-tricycle-permit.pdf',
@@ -80,6 +81,26 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
     next()
   })
   api.use(express.json({ limit: '16kb' }))
+  api.get('/verify/:referenceId', async (req, res) => {
+    const { referenceId } = req.params
+    if (!hex32.test(referenceId)) fail(404, 'Issued demo document not found.')
+    const { rows: [record] } = await pool.query(
+      `SELECT a.service, p.reference_id, p.confirmed_at, p.amount, p.tx_hash, p.contract
+         FROM payments p JOIN applications a ON a.id = p.application_id
+        WHERE p.reference_id = $1 AND a.status = 'paid'
+          AND p.tx_hash IS NOT NULL AND p.confirmed_at IS NOT NULL`,
+      [referenceId.toLowerCase()])
+    if (!record || !Object.hasOwn(certificateFiles, record.service)) fail(404, 'Issued demo document not found.')
+    res.json({
+      referenceId: record.reference_id,
+      service: record.service,
+      issuedAt: record.confirmed_at,
+      amount: record.amount,
+      hash: record.tx_hash,
+      chainId: 97,
+      contract: record.contract,
+    })
+  })
   api.use(async (req, _res, next) => {
     const token = req.headers.cookie?.match(/(?:^|;\s*)bayanflow_session=([a-f0-9]{64})(?:;|$)/)?.[1]
     if (token) {
@@ -124,6 +145,7 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
     const { rows } = await pool.query(
       `SELECT a.id, a.title, a.service, a.address, a.purpose, a.vehicle_identifier, a.status, a.revision, a.findings, a.ai_error, a.decision_note, a.created_at,
               p.payer, p.tx_hash, CASE WHEN a.status = 'paid' THEN p.reference_id END AS receipt_ref,
+              (a.status = 'paid' AND p.tx_hash IS NOT NULL AND p.confirmed_at IS NOT NULL) AS certificate_available,
               ARRAY(SELECT d.requirement FROM documents d WHERE d.application_id = a.id AND d.revision = a.revision) AS uploaded_documents
               ${filter.select ?? ''}
          FROM applications a LEFT JOIN payments p ON p.application_id = a.id
@@ -224,10 +246,11 @@ export function createApp({ pool, gateway, env = process.env, review = reviewDoc
     const filename = certificateFiles[application.service]
     if (!filename || application.status !== 'paid') fail(404, 'Certificate not found.')
     const { rows: [payment] } = await pool.query(
-      'SELECT confirmed_at FROM payments WHERE application_id=$1 AND tx_hash IS NOT NULL AND confirmed_at IS NOT NULL',
+      'SELECT reference_id, confirmed_at FROM payments WHERE application_id=$1 AND tx_hash IS NOT NULL AND confirmed_at IS NOT NULL',
       [application.id])
     if (!payment) fail(404, 'Certificate not found.')
-    const pdf = await clearanceCertificate(application, payment)
+    const url = new URL(`/verify/${encodeURIComponent(payment.reference_id)}`, env.PUBLIC_WEB_ORIGIN || 'http://localhost:3000')
+    const pdf = await clearanceCertificate(application, payment, url.href)
     res.attachment(filename).send(pdf)
   })
   api.get('/applications/:id/documents/:requirement', async (req, res) => {
