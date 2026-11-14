@@ -134,8 +134,6 @@ input[type=file] { background: var(--back); }
 .details { padding: 14px; border-top: 1px solid var(--line); }
 .applicant-details { overflow-wrap: anywhere; }
 .document-links { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.payment-warning { display: inline-flex; align-items: flex-start; gap: 8px; color: #744508; font-size: .9rem; line-height: 1.4; }
-.payment-warning-icon { display: inline-grid; place-items: center; flex: none; width: 1.25em; height: 1.25em; border: 1px solid currentColor; border-radius: 50%; font-weight: 700; line-height: 1; }
 .wallet-address { overflow-wrap: anywhere; }
 .findings { padding: 14px; border-radius: 10px; background: var(--back); }
 .finding { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }

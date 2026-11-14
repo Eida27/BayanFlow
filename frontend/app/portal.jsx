@@ -86,7 +86,6 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
   const [decisionError, setDecisionError] = useState('')
   const [correcting, setCorrecting] = useState(false)
   const correctionStart = useRef(null)
-  const paymentWarning = !application.payer && !pending && 'Authorize a wallet before confirming payment.'
   const staffNote = application.decision_note && <div className="notice"><strong>Staff note</strong><p>{application.decision_note}</p></div>
 
   function runPayment(action) {
@@ -198,10 +197,6 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
         {!pending && <button className="button primary" onClick={pay} disabled={busy}>Pay with wallet</button>}
         <button className={pending ? 'button primary' : 'button secondary'} disabled={busy} onClick={() => runPayment(() => verifyPayment(pending))}>Verify payment</button>
         {pending && <button className="button secondary" onClick={pay} disabled={busy}>Retry payment</button>}
-        {paymentWarning && <span className="payment-warning" role="status">
-          <span className="payment-warning-icon" aria-hidden="true">!</span>
-          {paymentWarning}
-        </span>}
         {pending && <a href={explorer + pending} target="_blank" rel="noreferrer">View transaction ↗</a>}
       </div>
       {paymentError && <p className="error" role="alert">{paymentError}</p>}
