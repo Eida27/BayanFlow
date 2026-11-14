@@ -1,18 +1,25 @@
-import { readFile } from 'node:fs/promises'
-import { createPool, transaction } from './database.js'
-import { hashPassword } from './auth.js'
+import { createPool, databaseUrl, transaction } from './database.js'
+import { initializeDatabase, resetDatabase } from './initialize-database.js'
 
+const reset = process.argv.includes('--reset')
+if (reset) {
+  const target = new URL(databaseUrl(process.env))
+  if (process.env.NODE_ENV === 'production' ||
+      !['postgres:', 'postgresql:'].includes(target.protocol) ||
+      !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname) ||
+      target.port !== '55432' || target.pathname !== '/bayanflow' ||
+      target.username !== 'bayanflow_owner' || target.search) {
+    throw new Error('Reset requires the local BayanFlow development database on port 55432.')
+  }
+}
 const pool = createPool()
 try {
-  const schema = await readFile(new URL('../database/schema.sql', import.meta.url), 'utf8')
   await transaction(pool, async db => {
-    await db.query(schema)
-    for (const [role, password] of [['resident', 'resident-demo'], ['staff', 'staff-demo']]) {
-      await db.query('INSERT INTO accounts (email, password_hash, role) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
-        [`${role}@bayanflow.test`, hashPassword(password), role])
-    }
+    if (!reset) return initializeDatabase(db)
+    await db.query('SET LOCAL search_path TO public')
+    await resetDatabase(db)
   })
-  console.log('BayanFlow database and demo accounts are ready.')
+  console.log(reset ? 'BayanFlow was reset and the demo accounts were restored.' : 'BayanFlow database and demo accounts are ready.')
 } finally {
   await pool.end()
 }

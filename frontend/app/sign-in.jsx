@@ -26,7 +26,7 @@ function Icon({ name }) {
   </svg>
 }
 
-export default function SignIn({ loading, busy, error, clearError, signIn }) {
+export default function SignIn({ busy, error, clearError, signIn }) {
   const [role, setRole] = useState('resident')
   const [visible, setVisible] = useState(false)
   const submitting = useRef(false)
@@ -51,48 +51,46 @@ export default function SignIn({ loading, busy, error, clearError, signIn }) {
         <section className={styles.access} aria-labelledby="sign-in-title">
           <div className={styles.accessContent}>
             <h1 id="sign-in-title">Sign in to BayanFlow</h1>
-            {loading ? <p className={styles.description} role="status">Checking your session…</p> : <>
-              <p className={styles.description}>Choose a demo account to get started.</p>
-              <fieldset className={styles.accounts} disabled={busy}>
-                <legend>Demo account</legend>
-                <div className={styles.accountOptions}>
-                  {accounts.map(account => <button type="button" key={account.id} className={styles.account}
-                    aria-pressed={role === account.id} onClick={() => {
-                      if (role === account.id) return
-                      setRole(account.id)
-                      setVisible(false)
-                      clearError()
-                    }}>
-                    <span className={styles.accountIcon}><Icon name={account.icon} /></span>
-                    {role === account.id && <span className={styles.selected}><Icon name="check" /></span>}
-                    <strong>{account.label}</strong>
-                    <span className={styles.accountDescription}>{account.description}</span>
-                  </button>)}
-                </div>
-              </fieldset>
-              <form key={role} className={styles.form} onSubmit={submit} aria-busy={busy}>
-                <label htmlFor="demo-email">Email address</label>
-                <input id="demo-email" name="email" type="email" autoComplete="username"
-                  autoCapitalize="none" spellCheck={false} required defaultValue={`${role}@bayanflow.test`} />
-                <label htmlFor="demo-password">Password</label>
-                <div className={styles.password}>
-                  <input id="demo-password" name="password" type={visible ? 'text' : 'password'}
-                    autoComplete="current-password" required defaultValue={`${role}-demo`} />
-                  <button type="button" className={styles.passwordToggle} aria-controls="demo-password"
-                    aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(value => !value)}>
-                    <Icon name={visible ? 'eyeOff' : 'eye'} />
-                  </button>
-                </div>
-                {error && <p className={styles.error} role="alert"><Icon name="info" />{error}</p>}
-                <button className={styles.submit} type="submit" disabled={busy}>
-                  {busy ? 'Signing in…' : 'Sign in'}<Icon name="arrow" />
+            <p className={styles.description}>Choose a demo account to get started.</p>
+            <fieldset className={styles.accounts} disabled={busy}>
+              <legend>Demo account</legend>
+              <div className={styles.accountOptions}>
+                {accounts.map(account => <button type="button" key={account.id} className={styles.account}
+                  aria-pressed={role === account.id} onClick={() => {
+                    if (role === account.id) return
+                    setRole(account.id)
+                    setVisible(false)
+                    clearError()
+                  }}>
+                  <span className={styles.accountIcon}><Icon name={account.icon} /></span>
+                  {role === account.id && <span className={styles.selected}><Icon name="check" /></span>}
+                  <strong>{account.label}</strong>
+                  <span className={styles.accountDescription}>{account.description}</span>
+                </button>)}
+              </div>
+            </fieldset>
+            <form key={role} className={styles.form} onSubmit={submit} aria-busy={busy}>
+              <label htmlFor="demo-email">Email address</label>
+              <input id="demo-email" name="email" type="email" autoComplete="username"
+                autoCapitalize="none" spellCheck={false} required defaultValue={`${role}@bayanflow.test`} />
+              <label htmlFor="demo-password">Password</label>
+              <div className={styles.password}>
+                <input id="demo-password" name="password" type={visible ? 'text' : 'password'}
+                  autoComplete="current-password" required defaultValue={`${role}-demo`} />
+                <button type="button" className={styles.passwordToggle} aria-controls="demo-password"
+                  aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(value => !value)}>
+                  <Icon name={visible ? 'eyeOff' : 'eye'} />
                 </button>
-              </form>
-              <span className={styles.srOnly} role="status">{busy ? 'Signing in…' : ''}</span>
-              <p className={styles.notice}><Icon name="info" />
-                <span>Use fictional sample documents. Payments use test BNB.</span>
-              </p>
-            </>}
+              </div>
+              {error && <p className={styles.error} role="alert"><Icon name="info" />{error}</p>}
+              <button className={styles.submit} type="submit" disabled={busy}>
+                {busy ? 'Signing in…' : 'Sign in'}<Icon name="arrow" />
+              </button>
+            </form>
+            <span className={styles.srOnly} role="status">{busy ? 'Signing in…' : ''}</span>
+            <p className={styles.notice}><Icon name="info" />
+              <span>Use fictional sample documents. Payments use test BNB.</span>
+            </p>
           </div>
         </section>
         <section className={styles.hero} aria-labelledby="portal-intro-title">

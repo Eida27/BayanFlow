@@ -27,7 +27,14 @@ Use Node.js 24, pnpm 11.25, and Docker Compose. For the live AI and payment step
 
 Use separate browser profiles for resident and staff. Only upload fictional material. The sample PDFs are bundled under `frontend/public/samples` and linked from the app. Express keeps uploaded files private and stores them in PostgreSQL. AI receives extracted text, and staff can proceed manually when extraction or AI is unavailable. `docker compose down` stops the database and retains the volume.
 
+## Reset the local database
+
+Run `pnpm db:reset` with the local PostgreSQL service running. It immediately deletes all data in the local BayanFlow public schema, including applications, uploads, sessions, notifications, and payment records. It rebuilds the current schema and restores the demo accounts listed above. Sign in again after the reset.
+
+Use `pnpm db:setup` for schema updates that preserve data. Existing BSC Testnet transactions remain on-chain.
+
 ## Configure BSC Testnet
+
 
 Follow the [contract setup and verification guide](contracts/README.md). Set `PAYMENT_CONTRACT_ADDRESS` and `PAYMENT_SIGNER_PRIVATE_KEY` in the root `.env` and restart the API. Use the key for the contract's configured **authorization signer**, ideally separate from the deployer and demo treasury. Configure MetaMask for chain 97 and fund the resident demo wallet with enough testnet tBNB for the fee and gas. The first payment authorization binds the application to that wallet. Authorization can be renewed for the same wallet.
 

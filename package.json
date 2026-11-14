@@ -11,6 +11,7 @@
     "dev": "node scripts/dev.js",
     "api": "node --env-file-if-exists=.env backend/server.js",
     "db:setup": "node --env-file-if-exists=.env backend/setup.js",
+    "db:reset": "node --env-file-if-exists=.env backend/setup.js --reset",
     "build": "next build frontend",
     "start": "next start frontend",
     "test": "node --test tests/*.test.js",

@@ -45,6 +45,7 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
   const uploaded = new Set(application.uploaded_documents)
   const missingZoningDocs = zoning && documents.some(([name]) => !uploaded.has(name))
   const [paymentError, setPaymentError] = useState('')
+  const [paymentProgress, setPaymentProgress] = useState('')
   const [decisionError, setDecisionError] = useState('')
   const [correcting, setCorrecting] = useState(false)
   const correctionStart = useRef(null)
@@ -52,10 +53,11 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
 
   function runPayment(action) {
     setPaymentError('')
-    return run(action, true, setPaymentError)
+    return run(action, true, setPaymentError).finally(() => setPaymentProgress(''))
   }
 
   async function verifyPayment(hash) {
+    setPaymentProgress('Checking for a confirmed payment on BNB Smart Chain Testnet…')
     try {
       await api(base + '/confirm', hash ? { hash } : {})
     } catch (error) {
@@ -74,9 +76,11 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
     runPayment(async () => {
       if (!window.ethereum) throw new Error('Install or enable an Ethereum-compatible wallet to pay.')
       const wallet = createWalletClient({ chain: bscTestnet, transport: custom(window.ethereum) })
+      setPaymentProgress('Connecting to your wallet. Open MetaMask from the browser toolbar to respond to any connection request.')
       const [payer] = await wallet.requestAddresses()
       if (!payer) throw new Error('Connect a wallet account to continue.')
       if (await wallet.getChainId() !== bscTestnet.id) {
+        setPaymentProgress('Switching to BNB Smart Chain Testnet. Check MetaMask for a network request.')
         try {
           await wallet.switchChain({ id: bscTestnet.id })
         } catch (error) {
@@ -85,7 +89,9 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
           await wallet.switchChain({ id: bscTestnet.id })
         }
       }
+      setPaymentProgress('Preparing payment authorization on BNB Smart Chain Testnet…')
       const authorization = await api(base + '/authorize', { payer })
+      setPaymentProgress('Waiting for your wallet. Open MetaMask from the browser toolbar to review the transaction request.')
       const hash = await wallet.writeContract({
         account: payer, address: authorization.contract, abi: payAbi,
         functionName: 'pay', args: [authorization.referenceId, BigInt(authorization.deadline), authorization.signature],
@@ -93,6 +99,7 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
       })
       localStorage.setItem(paymentKey(application.id), hash)
       setPending(hash)
+      setPaymentProgress('Transaction submitted. Waiting for BNB Smart Chain Testnet to confirm it…')
       await testnet.waitForTransactionReceipt({ hash, timeout: 20_000 }).catch(() => null)
       await verifyPayment(hash)
     })
@@ -162,6 +169,7 @@ function Details({ application, staff, run, decide, busy, setPending, pending, s
         {pending && <a href={explorer + pending} target="_blank" rel="noreferrer">View transaction ↗</a>}
       </div>
       {paymentError && <p className="error" role="alert">{paymentError}</p>}
+      {busy && paymentProgress && <p role="status">{paymentProgress}</p>}
       {pending && <button className="button secondary" disabled={busy} onClick={() => runPayment(() => verifyPayment())}>Search for a matching payment</button>}
     </section>}
     {application.status === 'paid' && <div className="document-links">
@@ -375,9 +383,8 @@ export default function Portal({ children }) {
   </>
 
   if (pathname !== '/' && !staffRoute) return children
-  if (staffRoute && (loading || user?.role === 'resident' || (!user && sessionCheckFailed))) {
-    return <StaffShell section={section} busy>
-      {error && !loading && !user ? <div className="panel stack">
+  if (loading || (!user && sessionCheckFailed) || (staffRoute && user?.role === 'resident')) {
+    const sessionStatus = !loading && sessionCheckFailed ? <div className="panel stack">
         <p className="error" role="alert">{error}</p>
         <button className="button secondary" onClick={() => {
           setError('')
@@ -385,8 +392,13 @@ export default function Portal({ children }) {
           setSessionCheckFailed(false)
           setSessionAttempt(attempt => attempt + 1)
         }}>Retry session check</button>
-      </div> : <StaffLoading>Checking your session…</StaffLoading>}
-    </StaffShell>
+      </div> : <div className="panel" role="status">Checking your session…</div>
+    if (staffRoute) return <StaffShell section={section} busy>{sessionStatus}</StaffShell>
+    return <div className="resident-site">
+      <Header />
+      <main className="shell main">{sessionStatus}</main>
+      <Footer />
+    </div>
   }
 
   if (staff) return <StaffShell section={section} unreadCount={unreadCount} busy={busy} signOut={signOut}>
@@ -398,7 +410,7 @@ export default function Portal({ children }) {
     {section === 'applications' && <Suspense fallback={<StaffLoading>Loading applications…</StaffLoading>}><StaffQueueRoute /></Suspense>}
   </StaffShell>
 
-  if (!user) return <SignIn loading={loading} busy={busy} error={error} clearError={() => setError('')}
+  if (!user) return <SignIn busy={busy} error={error} clearError={() => setError('')}
     signIn={credentials => run(async () => {
       const { user } = await api('/login', credentials)
       setUser(user)
