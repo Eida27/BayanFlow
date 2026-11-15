@@ -23,7 +23,6 @@ const upload = multer({
   limits: { files: 3, fileSize: 5 * 1024 * 1024 + 1, fields: 5, fieldSize: 4096 }
 }).fields(fileFields)
 const sessionName = 'bayanflow_session'
-const sessionOptions = { httpOnly: true, sameSite: 'strict', path: '/' }
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
 const hex32 = /^0x[0-9a-f]{64}$/i
 const checklists = {
@@ -69,6 +68,10 @@ async function ownedApplication(db, req, lock = false) {
 export function createApp({ pool, gateway, env = process.env, review = reviewDocuments }) {
   const app = express()
   app.disable('x-powered-by')
+  app.get('/healthz', (_req, res) => res.json({ ok: true }))
+  const sessionOptions = {
+    httpOnly: true, sameSite: 'strict', path: '/', secure: env.WEB_ORIGIN?.startsWith('https://') ?? false,
+  }
   const api = express.Router()
   app.use('/api', api)
   api.use((req, res, next) => {

@@ -33,6 +33,19 @@ Run `pnpm db:reset` with the local PostgreSQL service running. It immediately de
 
 Use `pnpm db:setup` for schema updates that preserve data. Existing BSC Testnet transactions remain on-chain.
 
+## Deploy a judges’ demo
+
+Use the free tiers of [Neon](https://neon.com/), [Render](https://render.com/docs/free), and [Vercel](https://vercel.com/docs/plans/hobby). Point both hosting services at the repository root on `main`. Keep the root local `.env` pointed at Docker Postgres and use a separate Neon project for the hosted demo.
+
+1. **Neon.** Create the database near your Render service region. In a separate shell, set `NODE_ENV=production`, `DATABASE_URL` to Neon's TLS connection string, and `DEMO_RESIDENT_PASSWORD` and `DEMO_STAFF_PASSWORD` to distinct generated passwords. Run `pnpm db:setup` from the repository root, then close that shell. Setup creates `resident@bayanflow.test` and `staff@bayanflow.test` on a fresh database. Re-running setup preserves existing accounts and passwords. Share the hosted passwords privately.
+2. **Render.** Create a Free Node Web Service. Set `NODE_VERSION=24.22.1`, build with `npx --yes pnpm@11.25.0 install --frozen-lockfile`, start with `npx --yes pnpm@11.25.0 api`, and set the health check path to `/healthz`. Set `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `BSC_TESTNET_RPC_URL`, `PAYMENT_CONTRACT_ADDRESS`, and `PAYMENT_SIGNER_PRIVATE_KEY` in Render. Set both `WEB_ORIGIN` and `PUBLIC_WEB_ORIGIN` to the production Vercel HTTPS origin, without a trailing slash. Use the contract's testnet authorization signer.
+3. **Vercel.** Import the repository with the Next.js preset and choose Node 24. Use `npx --yes pnpm@11.25.0 install --frozen-lockfile` as the install command, `npx --yes pnpm@11.25.0 build` as the build command, and `frontend/.next` as the output directory. Set `API_ORIGIN` to the Render HTTPS origin and deploy. If Vercel assigns a different production URL than expected, update both origin settings on Render before testing. The browser uses the Vercel URL for API requests and the rewrite forwards them to Render.
+4. **Rehearse.** Open the public URL and confirm the logo loads and `/samples/business-profile.pdf` downloads. In separate browser profiles, sign in to both roles and use the bundled fictional sample PDFs to submit, review, and approve an application. Verify a multi-file upload near the supported size limit through the public URL. Pay once with a funded BSC Testnet wallet. Save the completed application's reference for judges and verify its receipt and certificate QR in a signed-out browser. Live AI review may incur OpenAI charges.
+
+Give judges the Vercel URL, sample PDFs, and the steps to find the completed application. Share credentials privately. Open the hosted app and sign in shortly before a scheduled session so the Render API has time to wake from idle.
+
+For updates, run the local tests and build before pushing to `main`, then repeat the hosted sign-in and submission checks. If a new release fails, redeploy the last working commit on the affected service and preserve the Neon database. Run schema setup explicitly when a release changes the schema.
+
 ## Configure BSC Testnet
 
 
