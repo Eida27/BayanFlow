@@ -13,7 +13,10 @@ export async function api(path, body) {
 
 export function Header({ user, signOut, busy }) {
   return <header className="header"><div className="shell header-inner">
-    <Link className="brand" href="/"><span className="brand-mark" aria-hidden="true">B</span>BayanFlow</Link>
+    <Link className="brand" href="/">
+      <img className="brand-mark" src="/bayanflow-logo.svg" alt="" width="36" height="36" />
+      BayanFlow
+    </Link>
     <div className="header-actions">
       <span className="environment"><i /> Hackathon demo</span>
       {user && <button className="button quiet" disabled={busy} onClick={signOut}>Sign out</button>}

@@ -49,7 +49,7 @@ export default function StaffShell({ section, unreadCount, busy, signOut, childr
       menuButton.current.focus()
     }}>
       <Link className="staff-brand" href="/" onNavigate={() => setMenuOpen(false)}>
-        <span className="staff-brand-mark" aria-hidden="true">B</span>
+        <img className="brand-mark" src="/bayanflow-logo.svg" alt="" width="42" height="42" />
         <span>BayanFlow<small>Staff Portal</small></span>
       </Link>
       <button type="button" className="staff-menu button" ref={menuButton} aria-expanded={menuOpen}

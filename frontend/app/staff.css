@@ -57,16 +57,6 @@
   line-height: 1.2;
 }
 .staff-brand small { display: block; margin-top: 4px; color: #c4ded1; font-size: .78rem; font-weight: 500; }
-.staff-brand-mark {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  color: #143c2e;
-  background: #a9e9c5;
-}
 .staff-rail-content { display: none; grid-column: 1 / -1; }
 .staff-rail-content[data-open=true] { display: grid; gap: 12px; }
 .staff-nav { display: grid; gap: 8px; }
